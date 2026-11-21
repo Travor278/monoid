@@ -391,79 +391,81 @@ fn chat_bar_of(b : @view.View, src : Source, r : ChatRef, stint : () -> Int) -> 
         state.crumb_h.set(0.0)
       }
     })
-    g.show(show_crumb, at_once=true, fn(crumb_host) {
-      crumb_host.by_room(fn(cr, rr) {
-        let strip = cr.box(fn(s) {
-          bar_small_breadcrumb_node(s, openers_now)
+    g.show(fn() { show_crumb() || expanded() || state.open_way.shown(g) > 0.0 }, at_once=true, fn(extra) {
+      extra.show(show_crumb, at_once=true, fn(crumb_host) {
+        crumb_host.by_room(fn(cr, rr) {
+          let strip = cr.box(fn(s) {
+            bar_small_breadcrumb_node(s, openers_now)
+          })
+          cr.reacts(fn() { rr.tall(strip) }, fn(h) {
+            if h > 0.0 && state.crumb_h.get() != h {
+              state.crumb_h.set(h)
+            }
+          })
         })
-        cr.reacts(fn() { rr.tall(strip) }, fn(h) {
-          if h > 0.0 && state.crumb_h.get() != h {
-            state.crumb_h.set(h)
-          }
-        })
+        |> ignore
       })
-      |> ignore
-    })
-    g.show(fn() { expanded() || state.open_way.shown(g) > 0.0 }, fn(row2_room) {
-      let p = fn() { state.open_way.shown(row2_room) }
-      row2_room
-      .opens(
-        By(fn() {
-          let v = p()
-          if v >= 1.0 && expanded() {
-            None
-          } else {
-            Some(bar_clamp01(v))
-          }
-        }),
-        from_foot=true,
-      )
-      .clips(By(fn() { p() < 1.0 }))
-      |> ignore
-      row2_room.box(fn(row2_pad) {
-        row2_pad.padding(Is((0.0, 8.0, 0.0, 0.0))) |> ignore
-        row2_pad.box(fn(row2_box) {
-          let hp = fn() { state.open_way.shown(row2_box) }
-          @sf.presses_node(
-            row2_box,
-            fn() {
-              if expanded() && can_toggle() && hp() >= 1.0 {
-                state.manual_expanded.set(false)
-              }
-            },
-            on=fn() { expanded() && can_toggle() && hp() >= 1.0 },
-          )
-          row2_box
-          .row(Is(true))
-          .min_height(By(fn() { if can_toggle() { Some(44.0) } else { None } }))
-          .padding(Is((16.0, 0.0, 16.0, 8.0)))
-          .lines_up(Is(Some(Middle)))
-          .alpha(By(fn() { bar_clamp01((hp() - 0.15) / 0.85) }))
-          |> ignore
-          row2_box.by_room(fn(p2, rr2) {
-            p2.grow(Is(1.0)).basis(Is(Some(0.0))).min_width(Is(Some(0.0))) |> ignore
-            let t2 = p2.box(fn(t2) {
-              t2
-              .words(By(title_now))
-              .words_look(By(fn() {
-                let th = @sf.theme()
-                { size: th.t.title, weight: 600, line: chat_title_line, wrap: true, tracking: @view.letters_own, balance: false, max_lines: 0 }
-              }))
-              .ink(By(fn() { @sf.theme().p.text }))
-              |> ignore
+      extra.show(fn() { expanded() || state.open_way.shown(extra) > 0.0 }, fn(row2_room) {
+        let p = fn() { state.open_way.shown(row2_room) }
+        row2_room
+        .opens(
+          By(fn() {
+            let v = p()
+            if v >= 1.0 && expanded() {
+              None
+            } else {
+              Some(bar_clamp01(v))
+            }
+          }),
+          from_foot=true,
+        )
+        .clips(By(fn() { p() < 1.0 }))
+        |> ignore
+        row2_room.box(fn(row2_pad) {
+          row2_pad.padding(Is((0.0, 8.0, 0.0, 0.0))) |> ignore
+          row2_pad.box(fn(row2_box) {
+            let hp = fn() { state.open_way.shown(row2_box) }
+            @sf.presses_node(
+              row2_box,
+              fn() {
+                if expanded() && can_toggle() && hp() >= 1.0 {
+                  state.manual_expanded.set(false)
+                }
+              },
+              on=fn() { expanded() && can_toggle() && hp() >= 1.0 },
+            )
+            row2_box
+            .row(Is(true))
+            .min_height(By(fn() { if can_toggle() { Some(44.0) } else { None } }))
+            .padding(Is((16.0, 0.0, 16.0, 8.0)))
+            .lines_up(Is(Some(Middle)))
+            .alpha(By(fn() { bar_clamp01((hp() - 0.15) / 0.85) }))
+            |> ignore
+            row2_box.by_room(fn(p2, rr2) {
+              p2.grow(Is(1.0)).basis(Is(Some(0.0))).min_width(Is(Some(0.0))) |> ignore
+              let t2 = p2.box(fn(t2) {
+                t2
+                .words(By(title_now))
+                .words_look(By(fn() {
+                  let th = @sf.theme()
+                  { size: th.t.title, weight: 600, line: chat_title_line, wrap: true, tracking: @view.letters_own, balance: false, max_lines: 0 }
+                }))
+                .ink(By(fn() { @sf.theme().p.text }))
+                |> ignore
+              })
+              p2.reacts(fn() { (rr2.tall(t2), can_toggle()) }, fn(cur) {
+                if cur.0 > 0.0 && (expanded() || state.row2_h.get() <= 0.0) {
+                  let box_h = if cur.1 { dmax(44.0, cur.0 + 8.0) } else { cur.0 + 8.0 }
+                  state.row2_h.set(8.0 + box_h)
+                }
+              })
             })
-            p2.reacts(fn() { (rr2.tall(t2), can_toggle()) }, fn(cur) {
-              if cur.0 > 0.0 && (expanded() || state.row2_h.get() <= 0.0) {
-                let box_h = if cur.1 { dmax(44.0, cur.0 + 8.0) } else { cur.0 + 8.0 }
-                state.row2_h.set(8.0 + box_h)
-              }
-            })
+            |> ignore
           })
           |> ignore
         })
         |> ignore
       })
-      |> ignore
     })
     |> ignore
   })
@@ -874,89 +876,92 @@ fn bar_end_node(
       None => false
     }
   }
-  e.show(driven, fn(k) {
-    k.row(Is(true)).padding(By(fn() { (bar_keys_apart(), 0.0, 0.0, 0.0) })) |> ignore
-    @sf.round_key_node(
-      k,
-      "monitor",
-      fn() { @sf.t("web-pages.chat.screen") },
-      fn() {
-        match @signals.untracked(view) {
-          Some(v) => chat_remote_open(src, r, v, from=Node(k), along=End)
-          None => ()
-        }
-      },
-      icon_size=20.0,
-    )
-    k.box(fn(d) {
-      d
-      .over(Is(true))
-      .lines_up(Is(Some(End)))
-      .padding(Is((0.0, 6.0, 6.0, 0.0)))
-      |> ignore
-      d.box(fn(ring) {
-        ring
-        .width(Is(Some(11.0)))
-        .height(Is(Some(11.0)))
-        .radius(Is(5.5))
-        .padding(Is((2.0, 2.0, 2.0, 2.0)))
-        .ground(By(fn() { @sf.theme().p.bg }))
+  let has_subchats = fn() { bar_has_subchats(view) }
+  e.show(fn() { driven() || has_subchats() }, at_once=true, fn(opt) {
+    opt.row(Is(true)) |> ignore
+    opt.show(driven, fn(k) {
+      k.row(Is(true)).padding(By(fn() { (bar_keys_apart(), 0.0, 0.0, 0.0) })) |> ignore
+      @sf.round_key_node(
+        k,
+        "monitor",
+        fn() { @sf.t("web-pages.chat.screen") },
+        fn() {
+          match @signals.untracked(view) {
+            Some(v) => chat_remote_open(src, r, v, from=Node(k), along=End)
+            None => ()
+          }
+        },
+        icon_size=20.0,
+      )
+      k.box(fn(d) {
+        d
+        .over(Is(true))
+        .lines_up(Is(Some(End)))
+        .padding(Is((0.0, 6.0, 6.0, 0.0)))
         |> ignore
-        ring.box(fn(dot) {
-          dot
-          .grow(Is(1.0))
-          .radius(Is(3.5))
-          .ground(By(fn() { @sf.theme().p.primary }))
+        d.box(fn(ring) {
+          ring
+          .width(Is(Some(11.0)))
+          .height(Is(Some(11.0)))
+          .radius(Is(5.5))
+          .padding(Is((2.0, 2.0, 2.0, 2.0)))
+          .ground(By(fn() { @sf.theme().p.bg }))
+          |> ignore
+          ring.box(fn(dot) {
+            dot
+            .grow(Is(1.0))
+            .radius(Is(3.5))
+            .ground(By(fn() { @sf.theme().p.primary }))
+            |> ignore
+          })
           |> ignore
         })
         |> ignore
       })
       |> ignore
     })
-    |> ignore
-  })
-  // led sub-chats entry on Small's chat bar, only when led sub-chats exist
-  let has_subchats = fn() { bar_has_subchats(view) }
-  e.show(has_subchats, at_once=true, fn(k) {
-    slides(k)
-    k.row(Is(true)).padding(By(fn() { (bar_keys_apart(), 0.0, 0.0, 0.0) })) |> ignore
-    @sf.round_key_node(k, "spawned", fn() { @sf.t("web-pages.chat.subchats") }, fn() { open_subchats(src, r) }, icon_size=20.0)
-    let tone = fn() {
-      match view() {
-        Some(v) => @sfpages.opened_summary_tone(v.opened)
-        None => ""
+    // led sub-chats entry on Small's chat bar, only when led sub-chats exist
+    opt.show(has_subchats, at_once=true, fn(k) {
+      slides(k)
+      k.row(Is(true)).padding(By(fn() { (bar_keys_apart(), 0.0, 0.0, 0.0) })) |> ignore
+      @sf.round_key_node(k, "spawned", fn() { @sf.t("web-pages.chat.subchats") }, fn() { open_subchats(src, r) }, icon_size=20.0)
+      let tone = fn() {
+        match view() {
+          Some(v) => @sfpages.opened_summary_tone(v.opened)
+          None => ""
+        }
       }
-    }
-    k.show(fn() { tone() != "" }, at_once=true, fn(d) {
-      d
-      .over(Is(true))
-      .lines_up(Is(Some(End)))
-      .padding(Is((0.0, 6.0, 6.0, 0.0)))
-      |> ignore
-      d.box(fn(ring) {
-        ring
-        .width(Is(Some(11.0)))
-        .height(Is(Some(11.0)))
-        .radius(Is(5.5))
-        .padding(Is((2.0, 2.0, 2.0, 2.0)))
-        .ground(By(fn() { @sf.theme().p.bg }))
+      k.show(fn() { tone() != "" }, at_once=true, fn(d) {
+        d
+        .over(Is(true))
+        .lines_up(Is(Some(End)))
+        .padding(Is((0.0, 6.0, 6.0, 0.0)))
         |> ignore
-        ring.box(fn(dot) {
-          dot
-          .grow(Is(1.0))
-          .radius(Is(3.5))
-          .ground(By(fn() {
-            match tone() {
-              "fail" => @sf.theme().p.red
-              "need" => @ui.tree_theme().color(Warn)
-              _ => @sf.theme().p.online
-            }
-          }))
+        d.box(fn(ring) {
+          ring
+          .width(Is(Some(11.0)))
+          .height(Is(Some(11.0)))
+          .radius(Is(5.5))
+          .padding(Is((2.0, 2.0, 2.0, 2.0)))
+          .ground(By(fn() { @sf.theme().p.bg }))
+          |> ignore
+          ring.box(fn(dot) {
+            dot
+            .grow(Is(1.0))
+            .radius(Is(3.5))
+            .ground(By(fn() {
+              match tone() {
+                "fail" => @sf.theme().p.red
+                "need" => @ui.tree_theme().color(Warn)
+                _ => @sf.theme().p.online
+              }
+            }))
+            |> ignore
+          })
           |> ignore
         })
         |> ignore
       })
-      |> ignore
     })
   })
   // what it is (its info's sheet), then what is done with it ("…": the menu a row of the list has)
