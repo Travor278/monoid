@@ -190,11 +190,13 @@ pub fn chat_composer_node(
   apart? : () -> Bool = fn() { false },
   pane? : () -> FixedArray[@ui.CornerOf]? = fn() { None },
   laid? : () -> Double? = fn() { None },
+  over_it? : (@view.View) -> Unit,
+  over_full? : Bool = false,
 ) -> Unit {
   // (what changes in it moves only for a cause said (a key typed, the cursor come or let go, a file or a quote put in
   // or taken out by a hand here): what the core answers is there at once, @view.transition)
   v.transitions_only() |> ignore
-  composer_node_of(v, src, r, None, shows~, tips~, apart~, pane~, laid~)
+  composer_node_of(v, src, r, None, shows~, tips~, apart~, pane~, laid~, over_it?, over_full~)
 }
 
 ///|
@@ -234,6 +236,8 @@ fn composer_node_of(
   pane~ : () -> FixedArray[@ui.CornerOf]?,
   laid~ : () -> Double?,
   over? : Double = composer_over,
+  over_it? : (@view.View) -> Unit,
+  over_full? : Bool = false,
 ) -> Unit {
   let draft = match made {
     Some(m) => m.draft
@@ -412,7 +416,21 @@ fn composer_node_of(
       (drawn_top.val)(v) + foot_shift.shown(v)
     }
     match made {
-      None => composer_notices_node(foot, src, r, tips, stand, over_drawn)
+      None => {
+        composer_notices_node(foot, src, r, tips, stand, over_drawn)
+        match over_it {
+          Some(f) =>
+            foot.box(fn(o) {
+              o
+              .width(By(fn() { Some(stand.at(if over_full { stand.wide } else { stand.composer_w })) }))
+              .offset(By(fn() { (0.0, over_drawn(o)) }))
+              |> ignore
+              f(o)
+            })
+            |> ignore
+          None => ()
+        }
+      }
       Some({ over_it: Some(f), .. }) =>
         foot.show(fn() { !roomy() }, at_once=true, fn(o) {
           o

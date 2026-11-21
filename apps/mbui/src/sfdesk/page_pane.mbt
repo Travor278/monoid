@@ -485,7 +485,16 @@ fn pane_made(
                 },
                 // (its composer made as nodes in the list's foot: sfpages' chat_composer_node)
                 foot_node=fn(n, s, r, shows, laid) {
-                  @sfpages.chat_composer_node(n, s, r, shows~, laid~, tips~, apart=fn() { wide.tape.get() })
+                  @sfpages.chat_composer_node(
+                    n,
+                    s,
+                    r,
+                    shows~,
+                    laid~,
+                    tips~,
+                    apart=fn() { wide.tape.get() },
+                    over_it=fn(o) { wide_composer_bar_node(o, s, r, tips, stint) },
+                  )
                 },
                 // (its column on the page's way as the side panel or left sidebar slides beside it: laid out as at its target end)
                 narrower=fn(s, n) { pane_chat_narrower(s, n, k) },

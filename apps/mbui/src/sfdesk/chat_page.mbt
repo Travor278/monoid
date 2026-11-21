@@ -370,18 +370,6 @@ fn jobs_toggle() -> Unit {
 }
 
 ///|
-/// Where the screens' button's dot stands (screen_driven_dot): in its top right corner concentric with the button's
-/// (its 10 round: the dot's 5 and 5 in), as the corner rule has it.
-// kept across runs: a value (no field of it changes)
-let screen_driven_room : @ui.Style = @ui.css("w=S8 h=S8 pt=S1_25 pr=S1_25 align=AEnd")
-
-///|
-/// The screens' button's dot while an agent drives one: as the services' (jobs_alarm_room), in the tone of an agent at
-/// work.
-// kept across runs: a value (no field of it changes)
-let screen_driven_dot : @ui.Style = @ui.css("w=S2_5 h=S2_5 radius=Full bg=Warn border=B2 border_color=Bg")
-
-///|
 /// How wide the info's popover and the services' are (jobsPanel).
 let chat_info_w : Double = 320.0
 
@@ -433,9 +421,6 @@ let chat_title_room : @ui.Style = @ui.css("row")
 /// What leaves the bar's title row first, short of room: its people, then its agents but the
 /// first (the last of them first).
 let chat_bar_drop_people : Int = 1
-
-///|
-let chat_bar_drop_agents : Int = 2
 
 ///|
 /// How wide the title may be: 42% of the bar, 80 at least.
@@ -560,7 +545,7 @@ let agent_mark_btn_on : @ui.Style = @ui.css("radius=Md border=B2 border_color=Ac
 
 ///|
 // kept across runs: a value (no field of it changes)
-let agent_station : @ui.Style = @ui.css("row h=S5 radius=Md bg=Neutral")
+let agent_station : @ui.Style = @ui.css("row h=S5 radius=Md bg=Card")
 
 ///|
 // kept across runs: a value (no field of it changes)
@@ -620,19 +605,6 @@ let tile_card_agent : @ui.Style = @ui.css("w=Full p=S2_5")
 /// The dot on the tile's bottom right corner, 3 past it.
 // kept across runs: a value (no field of it changes)
 let agent_station_dot_room : @ui.Style = @ui.css("w=Full h=Full align=AEnd justify=JEnd").then(@sf.oversize(3.0))
-
-///|
-/// The services' button's dot (jobsTrigger ::after): 7 across, 6 in from its top right, ringed 2 in the page's ground.
-// kept across runs: a value (no field of it changes)
-let jobs_alarm_room : @ui.Style = @ui.css("w=S8 h=S8 pt=S1 pr=S1 align=AEnd")
-
-///|
-// kept across runs: a value (no field of it changes)
-let jobs_alarm_fail : @ui.Style = @ui.css("w=S2_5 h=S2_5 radius=Full bg=Danger border=B2 border_color=Bg")
-
-///|
-// kept across runs: a value (no field of it changes)
-let jobs_alarm_restart : @ui.Style = @ui.css("w=S2_5 h=S2_5 radius=Full bg=Warn border=B2 border_color=Bg")
 
 ///|
 /// The info's facts (detailRow): what it is muted in a 6em column, 12 apart; 13; at the panel's words' inset. A fact

@@ -52,7 +52,15 @@ fn board_beside_nodes(p : @view.View, src : Source, r : ChatRef, tips : @sf.TipL
     chat_body_nodes(col, retained, r, tips, fn() { 0 }, fn(n) {
       n
       .box(fn(at) {
-        @sfpages.chat_composer_node(at, retained, r, shows~, tips~, apart=fn() { false })
+        @sfpages.chat_composer_node(
+          at,
+          retained,
+          r,
+          shows~,
+          tips~,
+          apart=fn() { false },
+          over_it=fn(o) { wide_composer_bar_node(o, retained, r, tips, fn() { 0 }) },
+        )
       })
       |> ignore
     }, shows)

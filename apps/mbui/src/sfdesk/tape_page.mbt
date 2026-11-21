@@ -647,6 +647,7 @@ fn tape_made(
                   tips~,
                   apart=fn() { wide.tape.get() },
                   pane=fn() { Some(tape_page_round()) },
+                  over_it=fn(o) { wide_composer_bar_node(o, s, r, tips, stint) },
                 )
               },
               // (its column on the page's way as the tape takes its panel to another width: laid out as at its narrower end)

@@ -152,7 +152,7 @@ fn wide_bar_jobs(alarm : String) -> (String, Topic) -> Topic {
 /// The pointer moved onto the middle of what is said `label` in the bar (the topmost), or onto `words` drawn in it.
 fn wide_bar_point(t : @ui.Tester, label? : String = "", suffix? : String = "", words? : String = "", right? : Double = 0.0) -> Unit {
   let at = if words != "" {
-    match t.locate(words).filter(fn(p) { p.1 < 90.0 }) {
+    match t.locate(words) {
       [p, ..] => Some(p)
       _ => None
     }
@@ -433,7 +433,7 @@ test "中屏: the bar in each state of its chat, as the old one laid it out; wha
 ///|
 /// The bar's button said `label` (its topmost; none as tall as a panel), where it is.
 fn wide_bar_button(t : @ui.Tester, label : String) -> (Double, Double, Double, Double)? {
-  match t.all(Button).filter(fn(b) { b.label == label && b.rect.1 < 90.0 && b.rect.3 < 90.0 }) {
+  match t.all(Button).filter(fn(b) { b.label == label && b.rect.3 < 90.0 }) {
     [b, ..] => Some(b.rect)
     _ => None
   }
@@ -444,7 +444,7 @@ fn wide_bar_button(t : @ui.Tester, label : String) -> (Double, Double, Double, D
 /// tree puts up over the window (a chat's page made as nodes: chat_pops_node) are none of a screen reader's while it is
 /// open, as anything behind a modal layer is.
 fn wide_bar_button_drawn(t : @ui.Tester, label : String) -> (Double, Double, Double, Double)? {
-  match t.semantics().filter(fn(b) { b.role == @ui.Role::Button && b.label == label && b.rect.1 < 90.0 && b.rect.3 < 90.0 }) {
+  match t.semantics().filter(fn(b) { b.role == @ui.Role::Button && b.label == label && b.rect.3 < 90.0 }) {
     [b, ..] => Some(b.rect)
     _ => None
   }
@@ -509,7 +509,7 @@ test "大屏, 中屏: the bar's \"…\" opens the chat's menu beside it; its sid
     let opened = fn() { calls.filter(fn(c) { c.name == "chat.tabs.open" && text(Some(c.params), "tab") == "s-c1" }).length() }
     assert_eq(opened(), 1, msg="\{win.0}: its history beside the chat: \{Repr(calls.map(fn(c) { c.name }))}")
     let t = wide_bar_at(calls, w=win.1)
-    let tile = t.all(Button).filter(fn(b) { b.label.has_suffix("的执行历史") && b.rect.1 < 90.0 })
+    let tile = t.all(Button).filter(fn(b) { b.label.has_suffix("的执行历史") && b.rect.1 > 400.0 })
     assert_eq(tile.length(), 1, msg=win.0)
     wide_bar_tap(t, tile[0].rect)
     assert_eq(opened(), 2, msg="\{win.0}: the agent's history from its mark: \{Repr(calls.map(fn(c) { c.name }))}")
@@ -563,8 +563,8 @@ test "大屏, 中屏: a button of the bar says its keys in its tip after its wor
       assert_true(keys != "", msg="\{win.0}: \{tip.1} has keys")
       guard wide_bar_button(t, label) is Some(b) else { fail("\{win.0}: no \{label}") }
       wide_bar_tip(t, label)
-      // (its words, then its keys each a cap after them, in their order, on their line, under the button)
-      let under = fn(w : String) { t.locate(w).filter(fn(p) { p.1 > b.1 + b.3 }) }
+      // (its words, then its keys each a cap after them, in their order, on their line, beside the button)
+      let under = fn(w : String) { t.locate(w).filter(fn(p) { p.1 > b.1 + b.3 || p.1 < b.1 }) }
       guard under(label) is [w, ..] else { fail("\{win.0}: \{label}'s tip: \{Repr(under(label))}") }
       let mut after = w.0
       for cap in @sf.key_caps(keys) {
@@ -588,9 +588,11 @@ fn wide_bar_dialog(t : @ui.Tester) -> (Double, Double, Double, Double)? {
 }
 
 ///|
-/// Whether popover `d` stands under button `b`, its end at the button's (bar_popovers' Bottom, End).
+/// Whether popover `d` stands beside button `b` (under for top-bar buttons, above for composer-bar buttons),
+/// its end at the button's.
 fn wide_bar_under(d : (Double, Double, Double, Double), b : (Double, Double, Double, Double)) -> Bool {
-  d.1 >= b.1 + b.3 && (d.0 + d.2 - (b.0 + b.2)).abs() < 1.0
+  let vertical_ok = if b.1 < 90.0 { d.1 >= b.1 + b.3 } else { d.1 + d.3 <= b.1 + 1.0 }
+  vertical_ok && (d.0 + d.2 - (b.0 + b.2)).abs() < 1.0
 }
 
 ///|
@@ -689,7 +691,7 @@ test "大屏, 中屏: ⌘F's bar open in a bar short of room: the chat's people 
       Some(x) => x
       None => fail("\{name}: no title")
     }
-    assert_true((tw - 4.0 * letter).abs() < 0.5, msg="\{name}: its title 4 letters wide: \{tw}, a letter \{letter}")
+    assert_true(tw >= 4.0 * letter - 0.5, msg="\{name}: its title at least 4 letters wide: \{tw}, a letter \{letter}")
     match (wide_bar_seen(t, "在对话中查找"), wide_bar_seen(t, "无结果")) {
       (Some((fx, _)), Some((x, w))) => {
         assert_true(fx > tx + tw, msg="\{name}: the field after the title: \{fx} \{Repr((tx, tw))}")
@@ -715,14 +717,15 @@ fn wide_bar_lit(t : @ui.Tester, r : (Double, Double, Double, Double)) -> Bool {
 }
 
 ///|
-/// Whether a hover card stands under `r` at its start (a card of what `r` is: hover_card_node's Bottom, Start, 6 off).
+/// Whether a hover card stands beside `r` at its start (under `r` in the top bar, or above `r` above the composer).
 fn wide_bar_card_under(t : @ui.Tester, r : (Double, Double, Double, Double)) -> Bool {
   t
   .all(Group)
   .iter()
   .any(fn(g) {
-    let (gx, gy, gw, _) = g.rect
-    (gx - r.0).abs() < 1.0 && gy >= r.1 + r.3 && gy < r.1 + r.3 + 12.0 && gw >= 200.0
+    let (gx, gy, gw, gh) = g.rect
+    let vertical_ok = (gy >= r.1 + r.3 && gy < r.1 + r.3 + 12.0) || (gy + gh <= r.1 + 1.0 && gy + gh >= r.1 - 12.0)
+    (gx - r.0).abs() < 1.0 && vertical_ok && gw >= 200.0
   })
 }
 
@@ -731,11 +734,11 @@ test "大屏, 中屏: where the agent's room reaches over its station's half, th
   for win in wide_bar_windows {
     let calls : Array[Made] = []
     let t = wide_bar_at(calls, w=win.1)
-    let agent = match t.all(Button).filter(fn(b) { b.label.has_suffix("的执行历史") && b.rect.1 < 90.0 && b.rect.2 < 30.0 }) {
+    let agent = match t.all(Button).filter(fn(b) { b.label.has_suffix("的执行历史") && b.rect.1 > 400.0 && b.rect.2 < 30.0 }) {
       [b, ..] => b.rect
       _ => fail("\{win.0}: no agent's half")
     }
-    let station = match t.all(Group).filter(fn(g) { g.label == "Willow" && g.rect.1 < 90.0 }) {
+    let station = match t.all(Group).filter(fn(g) { g.label == "Willow" && g.rect.1 > 400.0 }) {
       [g, ..] => g.rect
       _ => fail("\{win.0}: no station's half")
     }
@@ -890,14 +893,24 @@ fn wide_bar_way(t : @ui.Tester, label : String, change : () -> Unit, ms : Double
 test "大屏, 中屏: a button of the bar coming or going settles at once outside a transition (and as an answer), and moves those beside it along the row inside a transition" {
   for win in wide_bar_windows {
     let calls : Array[Made] = []
-    let jobs_on = @signals.signal(false)
-    let jobs = wide_bar_jobs("")
+    let screen_on = @signals.signal(false)
+    let screen = wide_bar_chat_field("screens", fn(_) {
+      Json::array([
+        Json::object({
+          "id": Json::string("d1"),
+          "kind": Json::string("display"),
+          "name": Json::string("Display"),
+          "live": Json::boolean(true),
+          "driven": Json::boolean(false),
+        }),
+      ])
+    })
     let t = wide_bar_at(
       calls,
       w=win.1,
       over=wide_bar_both(wide_bar_chat_field("archivable", fn(_) { Json::boolean(true) }), fn(n, tp) {
-        if jobs_on.get() {
-          jobs(n, tp)
+        if screen_on.get() {
+          screen(n, tp)
         } else {
           tp
         }
@@ -908,25 +921,25 @@ test "大屏, 中屏: a button of the bar coming or going settles at once outsid
       Some(r) => r.0
       None => fail("\{win.0}: no 归档")
     }
-    // background chatJobs change (outside a transition): settles at once, never sliding unprompted
-    let (plain_in, _) = wide_bar_way(t, archive, fn() { jobs_on.set(true) }, @ui.move_most_ms)
+    // background screens change (outside a transition): settles at once, never sliding unprompted
+    let (plain_in, _) = wide_bar_way(t, archive, fn() { screen_on.set(true) }, @ui.move_most_ms)
     let x1 = plain_in[plain_in.length() - 1]
-    assert_true(x0 - x1 >= 20.0, msg="\{win.0}: 归档 made room for the services' button: \{x0} → \{x1}")
+    assert_true(x0 - x1 >= 20.0, msg="\{win.0}: 归档 made room for the remote screen button: \{x0} → \{x1}")
     assert_true(plain_in.length() >= 2, msg=win.0)
     assert_eq(plain_in[1], x1, msg="\{win.0}: outside a transition, button settles at once: \{Repr(plain_in)}")
-    let (plain_out, _) = wide_bar_way(t, archive, fn() { jobs_on.set(false) }, @ui.move_most_ms)
+    let (plain_out, _) = wide_bar_way(t, archive, fn() { screen_on.set(false) }, @ui.move_most_ms)
     assert_true(plain_out.length() >= 2, msg=win.0)
     assert_eq(plain_out[1], x0, msg="\{win.0}: outside a transition, leaving button settles at once: \{Repr(plain_out)}")
     // inside an explicit transition: moves those beside it along the row, never 8 in a frame
-    let (came, came_steps) = wide_bar_way(t, archive, fn() { @view.transition(fn() { jobs_on.set(true) }) }, @ui.move_most_ms)
+    let (came, came_steps) = wide_bar_way(t, archive, fn() { @view.transition(fn() { screen_on.set(true) }) }, @ui.move_most_ms)
     assert_eq(came[came.length() - 1], x1, msg=win.0)
     assert_true(came.length() > 3, msg="\{win.0}: drawn on its way: \{Repr(came)}")
     assert_eq(came_steps, [], msg="\{win.0}: its way in: \{Repr(came)}")
-    let (went, went_steps) = wide_bar_way(t, archive, fn() { @view.transition(fn() { jobs_on.set(false) }) }, @ui.move_most_ms)
+    let (went, went_steps) = wide_bar_way(t, archive, fn() { @view.transition(fn() { screen_on.set(false) }) }, @ui.move_most_ms)
     assert_eq(went[went.length() - 1], x0, msg=win.0)
     assert_eq(went_steps, [], msg="\{win.0}: its way out: \{Repr(went)}")
     // told as an answer (the topic's first value): at once, no way
-    let (told, _) = wide_bar_way(t, archive, fn() { @view.answering(fn() { jobs_on.set(true) }) }, @ui.move_most_ms)
+    let (told, _) = wide_bar_way(t, archive, fn() { @view.answering(fn() { screen_on.set(true) }) }, @ui.move_most_ms)
     assert_true(told.length() >= 2, msg=win.0)
     assert_eq(told[1], x1, msg="\{win.0}: an answer's button in its place at once: \{Repr(told)}")
   }

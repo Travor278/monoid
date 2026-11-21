@@ -169,9 +169,14 @@ test "wide: sub-chats bar entry excludes non-led chats, opens popover, navigates
   let calls2 : Array[Made] = []
   let t2 = wide_tester(calls2, mode="chat-subchats-pop")
   t2.draw()
-  assert_true(t2.query(Button, label="子会话") is Some(_))
+  guard t2.query(Button, label="子会话") is Some(sub_btn) else { fail("expected subchats button") }
+  assert_true(sub_btn.rect.1 > 400.0, msg="wide subchats pill must sit above composer: \{Repr(sub_btn.rect)}")
   t2.click(Button, label="子会话")
   t2.run_for(@ui.move_most_ms)
+  let dialogs = t2.all(Dialog)
+  assert_true(dialogs.length() > 0, msg="expected subchats popover dialog")
+  let d = dialogs[dialogs.length() - 1].rect
+  assert_true(d.1 + d.3 <= sub_btn.rect.1 + 1.0, msg="wide subchats popover must open above composer pill: \{Repr(d)} vs \{Repr(sub_btn.rect)}")
   assert_eq(t2.audit().filter(fn(f) { !f.contains("edge_node.mbt") }), [])
   // 4 led sub-chats shown (running, waiting, done, archived), non-led chat excluded!
   assert_true(t2.query(Button, label="安卓构建与冒烟测试") is Some(_))
@@ -220,7 +225,8 @@ test "small: chat-lineage breadcrumb navigates and chat-subchats-pop sheet exclu
   assert_eq(t.audit(), [])
   assert_true(t.query(Link, label="根规划") is Some(_))
   assert_true(t.query(Link, label="任务拆分") is Some(_))
-  assert_true(t.query(Button, label="子会话") is Some(_))
+  guard t.query(Button, label="子会话") is Some(sub_sm) else { fail("expected small subchats pill") }
+  assert_true(sub_sm.rect.1 > 400.0, msg="small subchats pill must sit above composer: \{Repr(sub_sm.rect)}")
   t.click(Link, label="任务拆分")
   t.run_for(@ui.move_most_ms)
   match app.nav.top() {

@@ -271,38 +271,6 @@ fn wide_bar_title_row(
     row.keeps_held(Is(true)).fits(Is(true)) |> ignore
     wide_bar_breadcrumb(row, view, across, tips)
     wide_bar_title(row, src, r, view, across, tips)
-    // (the station the chat runs on, as the workspace's marks have it)
-    // (what it last was while the marks are asked again: sfbase's asked_again.mbt)
-    let station_held = @sfbase.station_mark_held(src, r.station)
-    let station = fn() { station_held.get() }
-    let station_key = fn() {
-      match station() {
-        Some(s) => "\{s.name}\u{1}\{s.emoji}\u{1}\{s.icon}"
-        None => ""
-      }
-    }
-    // (how it is reached, read where it shows: no part of a key, so a change of it redraws its dot in place)
-    let via = fn() {
-      match station() {
-        Some(s) => s.via
-        None => ""
-      }
-    }
-    let agents = fn() {
-      match view() {
-        Some(v) => v.agents
-        None => []
-      }
-    }
-    // (who is in it by its title, beside the system's bars too: the user, 2026-10-28)
-    row.show(fn() { view() is Some(_) && agents().length() == 0 && station() is Some(_) }, along_row=true, fn(x) {
-      x.pick(station_key, fn(y, _) {
-        match @signals.untracked(station) {
-          Some(s) => wide_station_tag(y, r.station, s, via, tips, stint)
-          None => ()
-        }
-      })
-    })
     let people = fn() {
       match view() {
         Some(v) => v.people
@@ -315,49 +283,6 @@ fn wide_bar_title_row(
         wide_people(q, src, @signals.untracked(people), 5, tips, stint)
       })
     })
-    // (each of its agents by what it draws; the first with the station. Its state, and whether it is marked among
-    // several while its history shows, read where they show: no part of its key, so a change of either redraws them
-    // in place, its tile and an open card kept)
-    let agent_key = fn(i : Int, a : Agent) {
-      "\{i}\u{1}\{a.key}\u{1}\{a.maker}\u{1}\{a.runtime}\u{1}\{a.who}" +
-      (if i == 0 { "\u{1}" + station_key() } else { "" })
-    }
-    let tile = fn(k : @view.View, i : Int) {
-      let all = @signals.untracked(agents)
-      guard i < all.length() else { return }
-      let a = all[i]
-      let key = a.key
-      let badge = fn() {
-        match agents().iter().find_first(fn(x) { x.key == key }) {
-          Some(x) => x.badge
-          None => ""
-        }
-      }
-      let marked = fn() {
-        let front = match view() {
-          Some(v) => side_of(v).1
-          None => ""
-        }
-        agents().length() > 1 && front == key
-      }
-      let s = if i == 0 { @signals.untracked(station) } else { None }
-      wide_agent_tile(k, src, r, a, badge, marked, s, via, tips, stint)
-    }
-    row.show(fn() { agents().length() > 0 }, along_row=true, fn(f) {
-      f.pick(fn() { agent_key(0, agents()[0]) }, fn(k, _) { tile(k, 0) })
-    })
-    row.each(
-      fn() {
-        let all = agents()
-        Array::makei(dmax_int(0, all.length() - 1), fn(j) { (j + 1, agent_key(j + 1, all[j + 1])) })
-      },
-      fn(x) { x.1 },
-      fn(k, it) {
-        k.drops(Is(chat_bar_drop_agents)) |> ignore
-        tile(k, @signals.untracked(fn() { it.get() }).0)
-      },
-      along_row=true,
-    )
   })
   |> ignore
 }
@@ -382,7 +307,7 @@ fn wide_bar_breadcrumb(
   let key_of = fn() {
     openers().map(fn(o) { "\{o.chat.station}\u{1}\{o.chat.session}\u{1}\{o.chat.title}\u{1}\{o.archived}" }).join("\u{2}")
   }
-  row.show(fn() { openers().length() > 0 }, along_row=true, fn(wrap) {
+  row.show(fn() { openers().length() > 0 }, at_once=true, fn(wrap) {
     wrap.row(Is(true)).lines_up(Is(Some(Middle))).gap(Is(2.0)).shrink(Is(0.0)) |> ignore
     wrap.pick(at_once=true, key_of, fn(bc, _) {
       bc.row(Is(true)).lines_up(Is(Some(Middle))).gap(Is(2.0)).shrink(Is(0.0)) |> ignore
@@ -475,11 +400,11 @@ let wide_crumb_words_hot : @ui.TextStyle = @ui.text_style(size=Ui, color=Fg, wra
 
 ///|
 // kept across runs: a value (no field of it changes)
-let wide_subchats_count : @ui.TextStyle = @ui.text_style(size=Ui, weight=Medium, color=Muted, wrap=false, tabular=true)
+let wide_subchats_count : @ui.TextStyle = @ui.text_style(size=Meta, weight=Medium, color=Muted, wrap=false, tabular=true)
 
 ///|
 // kept across runs: a value (no field of it changes)
-let wide_subchats_count_hot : @ui.TextStyle = @ui.text_style(size=Ui, weight=Medium, color=Fg, wrap=false, tabular=true)
+let wide_subchats_count_hot : @ui.TextStyle = @ui.text_style(size=Meta, weight=Medium, color=Fg, wrap=false, tabular=true)
 
 ///|
 /// The chat's title in its row (chat_title's): while a new one goes (`chat.rename`), that one, a turning ring beside
@@ -917,138 +842,34 @@ fn wide_bar_keys(
       },
     )
     // its services and jobs, while it has any
-    // (what they last were while asked again: sfbase's asked_again.mbt)
-    let jobs_held = @sfbase.topic_value_held(src, "chatJobs", chat_jobs_summary_params(r))
-    let jobs = fn() { jobs_held.get() }
-    let has_jobs = fn() { flag(jobs(), "hasJobs") || items(jobs(), "jobs").length() > 0 }
-    k.show(fn() { own() && has_jobs() }, along_row=true, fn(b) {
-      let button = @sf.icon_button_node(b, "web", fn() { @sf.t("web-pages.chat.services") }, fn() { jobs_pressed(src, r) }, tips~, linked=ends.linked, shortcut="chat.jobs")
-      // (its popover beside it, where it is as that is drawn: chat_pops_node's)
-      chat_jobs_pop_node(b, src, r, Some(button))
-    })
-    // (a dot on the row's first button, as the old bar's layer stood, drawn after its services' button: red while a
-    // job died lately, amber while a service restarts)
-    let alarm = fn() { if own() && has_jobs() { text(jobs(), "alarm") } else { "" } }
-    k.show(fn() { alarm() != "" }, at_once=true, fn(o) {
-      o.over(Is(true)) |> ignore
-      @sf.style_node(o, fn() { jobs_alarm_room })
-      o.box(fn(d) { @sf.style_node(d, fn() { if alarm() == "fail" { jobs_alarm_fail } else { jobs_alarm_restart } }) })
-      |> ignore
-    })
-    // unified way to the station's remote screens, browser and workspace terminal; marked while an agent drives one
+    // idle remote screens entry stays in the top bar; when an agent actively drives a screen, it moves above the composer
     k.show(
       fn() {
         own() &&
         (match view() {
-          Some(v) => chat_has_remote(v)
+          Some(v) => chat_has_remote(v) && !chat_screens_driven(v.screens)
           None => false
         })
       },
       along_row=true,
       fn(b) {
-        b.box(fn(sb) {
-          let me : Ref[@view.View?] = Ref(None)
-          let button = @sf.icon_button_node(sb, "monitor", fn() { @sf.t("web-pages.chat.screen") }, fn() {
-            match (@signals.untracked(view), me.val) {
-              (Some(v), Some(at)) => chat_remote_open(src, r, v, from=Node(at))
-              _ => ()
-            }
-          }, tips~, linked=ends.linked, shortcut="chat.screen")
-          me.val = Some(button)
-          // (no count on it: how many there are is its menu's; the user, 2026-11-13: a count on the icon's corner hid it)
-          let driven = fn() {
-            match view() {
-              Some(v) => chat_screens_driven(v.screens)
-              None => false
-            }
+        let me : Ref[@view.View?] = Ref(None)
+        let button = @sf.icon_button_node(b, "monitor", fn() { @sf.t("web-pages.chat.screen") }, fn() {
+          match (@signals.untracked(view), me.val) {
+            (Some(v), Some(at)) => chat_remote_open(src, r, v, from=Node(at))
+            _ => ()
           }
-          sb.show(driven, at_once=true, fn(o) {
-            // (over the button, not after it: the old view's layer)
-            o.over(Is(true)) |> ignore
-            @sf.style_node(o, fn() { screen_driven_room })
-            o.box(fn(d) { @sf.style_node(d, fn() { screen_driven_dot }) }) |> ignore
-          })
-        })
-        |> ignore
+        }, tips~, linked=ends.linked, shortcut="chat.screen")
+        me.val = Some(button)
       },
     )
-    // led sub-chats entry button (only when led sub-chats exist), same height and concentric corner as icon buttons
-    let led_subchats = fn() {
-      match view() {
-        Some(v) => @sfpages.led_subchats(v.opened)
-        None => []
-      }
-    }
-    let subchats_tone = fn() {
-      match view() {
-        Some(v) => @sfpages.opened_summary_tone(v.opened)
-        None => ""
-      }
-    }
-    k.show(fn() { own() && led_subchats().length() > 0 }, along_row=true, fn(b) {
-      let label = fn() { @sf.t("web-pages.chat.subchats") }
-      let tip = fn() { @sf.t("web-pages.chat.subchats") }
-      let button = @sf.action_box_node(b, label, fn(_) { toggle_subchats_pop() }, fn(btn) {
-        btn
-        .row(Is(true))
-        .height(Is(Some(@sf.bar_key_side)))
-        .padding(Is((8.0, 0.0, 8.0, 0.0)))
-        .gap(Is(5.0))
-        .lines_up(Is(Some(Middle)))
-        .lies_along(Is(Middle))
-        .radius(By(fn() {
-          match (ends.linked)() {
-            Some(link) => link.radius(@ui.tree_corner_roots_now())
-            None => @sf.bar_key_side / 2.0
-          }
-        }))
-        |> ignore
-        @sf.hover_ground_node(btn, on=fn() { !chat_own.subchats_open.get() })
-        btn.ground(By(fn() {
-          if chat_own.subchats_open.get() {
-            @sf.theme().p.hover
-          } else {
-            0L
-          }
-        }))
-        |> ignore
-        @sf.focus_ring_node(btn)
-        let hot = fn() { @sf.lit_node(btn) || chat_own.subchats_open.get() }
-        @sf.icon_node(btn, "spawned", 15.0, By(fn() { if hot() { @sf.theme().p.text } else { @sf.theme().p.muted } })) |> ignore
-        @sf.words_node(btn, fn() { led_subchats().length().to_string() }, fn() {
-          if hot() {
-            wide_subchats_count_hot
-          } else {
-            wide_subchats_count
-          }
-        })
-        |> ignore
-        btn.show(at_once=true, fn() { subchats_tone() != "" }, fn(d) {
-          d
-          .width(Is(Some(6.0)))
-          .height(Is(Some(6.0)))
-          .radius(Is(3.0))
-          .ground(By(fn() {
-            match subchats_tone() {
-              "fail" => @sf.theme().p.red
-              "need" => @ui.tree_theme().color(Warn)
-              _ => @sf.theme().p.online
-            }
-          }))
-          |> ignore
-        })
-        @sf.tip_node(tips, btn, tip) |> ignore
-      })
-      chat_subchats_pop_node(b, src, r, view, Some(button))
-    })
     // what it is (its info's popover beside it: chat_pops_node's), what is done with it ("…": the menu a row of the sidebar has)
     k.show(own, at_once=true, fn(b) {
+      b.row(Is(true)).gap(Is(4.0)).lines_up(Is(Some(Middle))) |> ignore
       let button = @sf.icon_button_node(b, "info", fn() { @sf.t("web-pages.chat.info") }, fn() {
         chat_own.info_open.set(!chat_own.info_open.untracked())
       }, tips~, linked=ends.linked)
       chat_info_pop_node(b, src, r, view, stint, Some(button))
-    })
-    k.show(own, at_once=true, fn(b) {
       let me : Ref[@view.View?] = Ref(None)
       me.val = Some(
         @sf.icon_button_node(b, "more", fn() { @sf.t("common.more") }, fn() {
@@ -1087,11 +908,249 @@ fn wide_bar_keys(
 }
 
 ///|
-/// The larger of two whole numbers.
-fn dmax_int(a : Int, b : Int) -> Int {
-  if a > b {
-    a
-  } else {
-    b
+// kept across runs: a value (no field of it changes)
+let wide_subchats_words : @ui.TextStyle = @ui.text_style(size=Meta, color=Fg, wrap=false)
+
+///|
+/// Active controls strip directly above the composer on Medium / Large screens (isomorphic with Small's
+/// `chat_composer_bar_node`):
+/// - Left: frequent controls (Agent + Station tiles via `wide_agent_tile`, or `wide_station_tag` when no agent)
+/// - Right: live/active controls (Active Jobs, Driven Screen, Led Sub-chats) under a single `show` so ordinary chats
+///   with none pay at most one idle slot node. Popovers for Jobs and Sub-chats anchor upward (`side=Top`).
+fn wide_composer_bar_node(
+  o : @view.View,
+  src : Source,
+  r : ChatRef,
+  tips : @sf.TipLayer,
+  stint : () -> Int,
+) -> Unit {
+  let view = fn() { @sfbase.chat_view_now(src, r) }
+  let station_held = @sfbase.station_mark_held(src, r.station)
+  let station = fn() { station_held.get() }
+  let station_key = fn() {
+    match station() {
+      Some(s) => "\{s.name}\u{1}\{s.emoji}\u{1}\{s.icon}"
+      None => ""
+    }
   }
+  let via = fn() {
+    match station() {
+      Some(s) => s.via
+      None => ""
+    }
+  }
+  let agents = fn() {
+    match view() {
+      Some(v) => v.agents
+      None => []
+    }
+  }
+  let jobs_held = @sfbase.topic_value_held(src, "chatJobs", chat_jobs_summary_params(r))
+  let jobs = fn() { jobs_held.get() }
+  let has_jobs = fn() { flag(jobs(), "hasJobs") || items(jobs(), "jobs").length() > 0 }
+  let alarm = fn() { if has_jobs() { text(jobs(), "alarm") } else { "" } }
+  let driven = fn() {
+    match view() {
+      Some(v) => chat_screens_driven(v.screens)
+      None => false
+    }
+  }
+  let led_subchats = fn() {
+    match view() {
+      Some(v) => @sfpages.led_subchats(v.opened)
+      None => []
+    }
+  }
+  let has_subchats = fn() { led_subchats().length() > 0 }
+  let subchats_tone = fn() {
+    match view() {
+      Some(v) => @sfpages.opened_summary_tone(v.opened)
+      None => ""
+    }
+  }
+  let has_right = fn() { has_jobs() || driven() || has_subchats() }
+  let own = fn() { !@sf.native_on() }
+  o
+  .row(Is(true))
+  .lines_up(Is(Some(Middle)))
+  .lies_along(Is(Between))
+  .gap(Is(8.0))
+  .padding(Is((2.0, 0.0, 2.0, 6.0)))
+  |> ignore
+  // Left group: frequent Agent + Station controls under a single `each` (no idle show/pick slots)
+  o.box(fn(left) {
+    left.row(Is(true)).gap(Is(6.0)).lines_up(Is(Some(Middle))).shrink(Is(1.0)).min_width(Is(Some(0.0))) |> ignore
+    left.each(
+      at_once=true,
+      fn() {
+        let all = agents()
+        if all.length() > 0 {
+          all.mapi(fn(i, a) { (i, Some(a)) })
+        } else if view() is Some(_) && station() is Some(_) {
+          [(-1, None)]
+        } else {
+          []
+        }
+      },
+      fn(item) {
+        match item.1 {
+          Some(a) =>
+            "a\u{1}\{item.0}\u{1}\{a.key}\u{1}\{a.maker}\u{1}\{a.runtime}\u{1}\{a.who}" +
+            (if item.0 == 0 { "\u{1}" + station_key() } else { "" })
+          None => "s\u{1}" + station_key()
+        }
+      },
+      fn(k, it) {
+        let (i, a_opt) = it.untracked()
+        match a_opt {
+          None => {
+            k.radius(Is(999.0)).ground(By(fn() { @sf.theme().p.bg })) |> ignore
+            match @signals.untracked(station) {
+              Some(s) => wide_station_tag(k, r.station, s, via, tips, stint)
+              None => ()
+            }
+          }
+          Some(a) => {
+            let key = a.key
+            let badge = fn() {
+              match it.get().1 {
+                Some(x) => x.badge
+                None => ""
+              }
+            }
+            let marked = fn() {
+              let front = match view() {
+                Some(v) => side_of(v).1
+                None => ""
+              }
+              agents().length() > 1 && front == key
+            }
+            let s = if i == 0 { @signals.untracked(station) } else { None }
+            wide_agent_tile(k, src, r, a, badge, marked, s, via, tips, stint)
+          }
+        }
+      },
+    )
+  })
+  |> ignore
+  // Right group: live/active controls under a single `show`
+  o.show(has_right, at_once=true, fn(right) {
+    right.row(Is(true)).gap(Is(6.0)).lines_up(Is(Some(Middle))).shrink(Is(0.0)) |> ignore
+    // Active Jobs pill
+    right.show(has_jobs, at_once=true, fn(b) {
+      let button = @sf.action_box_node(b, fn() { @sf.t("web-pages.chat.services") }, fn(_) { jobs_pressed(src, r) }, fn(btn) {
+        btn
+        .row(Is(true))
+        .height(Is(Some(20.0)))
+        .padding(Is((6.0, 0.0, 6.0, 0.0)))
+        .gap(Is(4.0))
+        .lines_up(Is(Some(Middle)))
+        .lies_along(Is(Middle))
+        .radius(Is(6.0))
+        .edge(By(fn() { (1.0, @sf.theme().p.line) }))
+        |> ignore
+        @sf.hover_ground_node(btn, on=fn() { !chat_own.jobs_open.get() })
+        btn.ground(By(fn() { if chat_own.jobs_open.get() { @sf.theme().p.hover } else { @sf.theme().p.card } })) |> ignore
+        @sf.focus_ring_node(btn)
+        let hot = fn() { @sf.lit_node(btn) || chat_own.jobs_open.get() }
+        @sf.icon_node(btn, "web", 12.0, By(fn() { if hot() { @sf.theme().p.text } else { @sf.theme().p.muted } })) |> ignore
+        btn.show(fn() { alarm() == "fail" || alarm() == "restart" }, at_once=true, fn(d) {
+          d
+          .width(Is(Some(6.0)))
+          .height(Is(Some(6.0)))
+          .radius(Is(3.0))
+          .ground(By(fn() { if alarm() == "fail" { @sf.theme().p.red } else { @ui.tree_theme().color(Warn) } }))
+          |> ignore
+        })
+        @sf.tip_node(tips, btn, fn() { @sf.t("web-pages.chat.services") }, shortcut="chat.jobs") |> ignore
+      })
+      if @signals.untracked(own) {
+        chat_jobs_pop_node(b, src, r, Some(button))
+      }
+    })
+    // Driven Screen pill
+    right.show(driven, at_once=true, fn(b) {
+      @sf.action_box_node(b, fn() { @sf.t("web-pages.chat.screen") }, fn(at) {
+        match @signals.untracked(view) {
+          Some(v) => chat_remote_open(src, r, v, from=Node(at), along=End)
+          None => ()
+        }
+      }, fn(btn) {
+        btn
+        .row(Is(true))
+        .height(Is(Some(20.0)))
+        .padding(Is((6.0, 0.0, 6.0, 0.0)))
+        .gap(Is(4.0))
+        .lines_up(Is(Some(Middle)))
+        .lies_along(Is(Middle))
+        .radius(Is(6.0))
+        .edge(By(fn() { (1.0, @sf.theme().p.line) }))
+        |> ignore
+        @sf.hover_ground_node(btn)
+        btn.ground(By(fn() { @sf.theme().p.card })) |> ignore
+        @sf.focus_ring_node(btn)
+        let hot = fn() { @sf.lit_node(btn) }
+        @sf.icon_node(btn, "monitor", 12.0, By(fn() { if hot() { @sf.theme().p.text } else { @sf.theme().p.muted } })) |> ignore
+        btn.box(fn(d) {
+          d
+          .width(Is(Some(6.0)))
+          .height(Is(Some(6.0)))
+          .radius(Is(3.0))
+          .ground(By(fn() { @sf.theme().p.primary }))
+          |> ignore
+        })
+        |> ignore
+        @sf.tip_node(tips, btn, fn() { @sf.t("web-pages.chat.screen") }, shortcut="chat.screen") |> ignore
+      })
+      |> ignore
+    })
+    // Led Sub-chats pill
+    right.show(has_subchats, at_once=true, fn(b) {
+      let label = fn() { @sf.t("web-pages.chat.subchats") }
+      let button = @sf.action_box_node(b, label, fn(_) { toggle_subchats_pop() }, fn(btn) {
+        btn
+        .row(Is(true))
+        .height(Is(Some(20.0)))
+        .padding(Is((6.0, 0.0, 6.0, 0.0)))
+        .gap(Is(4.0))
+        .lines_up(Is(Some(Middle)))
+        .lies_along(Is(Middle))
+        .radius(Is(6.0))
+        .edge(By(fn() { (1.0, @sf.theme().p.line) }))
+        |> ignore
+        @sf.hover_ground_node(btn, on=fn() { !chat_own.subchats_open.get() })
+        btn.ground(By(fn() { if chat_own.subchats_open.get() { @sf.theme().p.hover } else { @sf.theme().p.card } })) |> ignore
+        @sf.focus_ring_node(btn)
+        let hot = fn() { @sf.lit_node(btn) || chat_own.subchats_open.get() }
+        @sf.icon_node(btn, "spawned", 12.0, By(fn() { if hot() { @sf.theme().p.text } else { @sf.theme().p.muted } })) |> ignore
+        @sf.words_node(btn, label, fn() { wide_subchats_words }) |> ignore
+        @sf.words_node(btn, fn() { led_subchats().length().to_string() }, fn() {
+          if hot() {
+            wide_subchats_count_hot
+          } else {
+            wide_subchats_count
+          }
+        })
+        |> ignore
+        btn.show(at_once=true, fn() { subchats_tone() != "" }, fn(d) {
+          d
+          .width(Is(Some(6.0)))
+          .height(Is(Some(6.0)))
+          .radius(Is(3.0))
+          .ground(By(fn() {
+            match subchats_tone() {
+              "fail" => @sf.theme().p.red
+              "need" => @ui.tree_theme().color(Warn)
+              _ => @sf.theme().p.online
+            }
+          }))
+          |> ignore
+        })
+        @sf.tip_node(tips, btn, label) |> ignore
+      })
+      if @signals.untracked(own) {
+        chat_subchats_pop_node(b, src, r, view, Some(button))
+      }
+    })
+  })
 }

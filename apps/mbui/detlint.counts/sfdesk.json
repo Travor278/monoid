@@ -25,9 +25,6 @@
       "src/sfdesk/panel_node.mbt": 1,
       "src/sfdesk/rail_node.mbt": 2,
       "src/sfdesk/tape_view.mbt": 1
-    },
-    "structure-box": {
-      "src/sfdesk/chat_bar_wide_node.mbt": 1
     }
   },
   "excused": {

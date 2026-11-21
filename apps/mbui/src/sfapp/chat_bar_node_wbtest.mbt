@@ -122,10 +122,20 @@ fn bar_node_audit(t : @ui.Tester) -> Array[String] {
 }
 
 ///|
-fn bar_agent_x(t : @ui.Tester) -> Double? {
+fn bar_info_x(t : @ui.Tester) -> Double? {
   for s in t.semantics() {
-    if s.role == @ui.Role::Button && s.label.contains("Willow") && s.rect.1 < 50.0 {
+    if s.role == @ui.Role::Button && s.label == tr("android-chat.info.title") && s.rect.1 < 50.0 {
       return Some(s.rect.0)
+    }
+  }
+  None
+}
+
+///|
+fn composer_agent_rect(t : @ui.Tester) -> (Double, Double, Double, Double)? {
+  for s in t.semantics() {
+    if s.role == @ui.Role::Button && s.label.contains("Willow") && s.rect.1 > 400.0 {
+      return Some(s.rect)
     }
   }
   None
@@ -172,7 +182,8 @@ test "小屏顶栏：放得下 3 字+省略号的长标题点击平滑展开到�
   // Collapsed baseline
   assert_eq(bar_extra_target(bar_ref), 0.0)
   assert_eq(bar_node_audit(t), [], msg="collapsed audit: \{Repr(bar_node_audit(t))}")
-  guard bar_agent_x(t) is Some(agent_x0) else { fail("missing Row 1 agent mark") }
+  guard bar_info_x(t) is Some(info_x0) else { fail("missing Row 1 info button") }
+  assert_true(composer_agent_rect(t) is Some(_), msg="agent mark must sit above composer")
   guard first_msg_top(t, r2_ref) is Some(msg_y0) else {
     fail("missing top message: \{Repr(t.words().filter(fn(w) { w.2 < 300.0 }))}")
   }
@@ -186,15 +197,15 @@ test "小屏顶栏：放得下 3 字+省略号的长标题点击平滑展开到�
   t.tap(tap_x, tap_y)
   t.run_for(chat_bar_expand_ms / 2.0)
   assert_eq(bar_node_audit(t), [], msg="mid-expand audit: \{Repr(bar_node_audit(t))}")
-  guard bar_agent_x(t) is Some(agent_x_mid) else { fail("missing Row 1 agent mid-expand") }
-  assert_true((agent_x_mid - agent_x0).abs() < 0.2, msg="agent X jumped mid-expand: \{agent_x0} vs \{agent_x_mid}")
+  guard bar_info_x(t) is Some(info_x_mid) else { fail("missing Row 1 info mid-expand") }
+  assert_true((info_x_mid - info_x0).abs() < 0.2, msg="info X jumped mid-expand: \{info_x0} vs \{info_x_mid}")
   guard first_msg_top(t, r2_ref) is Some(msg_y_mid) else { fail("missing message mid-expand") }
   assert_true(msg_y_mid > msg_y0 + 10.0, msg="message list should move smoothly downward mid-expand: \{msg_y0} -> \{msg_y_mid}")
   t.run_for(chat_bar_expand_ms)
   assert_eq(bar_node_audit(t), [], msg="expanded audit: \{Repr(bar_node_audit(t))}")
   assert_true(bar_extra_target(bar_ref) >= 50.0, msg="expanded Row 2 height >= 50pt")
-  guard bar_agent_x(t) is Some(agent_x_exp) else { fail("missing Row 1 agent expanded") }
-  assert_true((agent_x_exp - agent_x0).abs() < 0.2, msg="agent X jumped expanded: \{agent_x0} vs \{agent_x_exp}")
+  guard bar_info_x(t) is Some(info_x_exp) else { fail("missing Row 1 info expanded") }
+  assert_true((info_x_exp - info_x0).abs() < 0.2, msg="info X jumped expanded: \{info_x0} vs \{info_x_exp}")
   // Row 1 title is laid_nowhere once settled expanded; Row 2 shows full title below 50pt
   let row1_after = t.words().filter(fn(w) { w.2 < 48.0 && w.0 == long_title && w.5 > 0.0 })
   assert_eq(row1_after.length(), 0, msg="Row 1 title hidden when settled expanded")
@@ -209,8 +220,8 @@ test "小屏顶栏：放得下 3 字+省略号的长标题点击平滑展开到�
   t.run_for(chat_bar_collapse_ms)
   assert_eq(bar_node_audit(t), [], msg="collapsed-back audit: \{Repr(bar_node_audit(t))}")
   assert_eq(bar_extra_target(bar_ref), 0.0)
-  guard bar_agent_x(t) is Some(agent_x_end) else { fail("missing Row 1 agent collapsed back") }
-  assert_true((agent_x_end - agent_x0).abs() < 0.2, msg="agent X jumped after collapse")
+  guard bar_info_x(t) is Some(info_x_end) else { fail("missing Row 1 info collapsed back") }
+  assert_true((info_x_end - info_x0).abs() < 0.2, msg="info X jumped after collapse")
   guard first_msg_top(t, r2_ref) is Some(msg_y_end) else { fail("missing message after collapse") }
   assert_true((msg_y_end - msg_y0).abs() < 0.5, msg="message list returned to baseline: \{msg_y0} vs \{msg_y_end}")
 }
@@ -218,13 +229,13 @@ test "小屏顶栏：放得下 3 字+省略号的长标题点击平滑展开到�
 ///|
 test "小屏顶栏：放不下 3 字+省略号时默认直接展开到第 2 行，且不可点收起" {
   let tight_title = "极窄标题测试：当第 1 行连三个汉字加省略号都放不下时自动展开"
-  // w=290 with 1 agent pill + jobs + info + more leaves ~30pt on Row 1 (< width("一二三…"))
+  // w=230 with archivable + info + more leaves < width("一二三…") on Row 1
   let (t, _) = chat_bar_node_tester(
     tight_title,
     extra_agents=0,
-    archivable=false,
-    has_jobs=true,
-    w=290.0,
+    archivable=true,
+    has_jobs=false,
+    w=230.0,
     msg_count=1,
   )
   let bar_ref : ChatRef = { station: "ws1/st1", session: "s-c1", title: tight_title, station_name: "Willow" }
@@ -277,26 +288,28 @@ test "小屏顶栏：有状态栏且可点展开时，第 1 行标题自身高�
   assert_true(th < 28.0, msg="words node height must not include vertical padding: h=\{th}")
   assert_true(ty >= 50.0, msg="title must stay clear of 40pt status bar: y=\{ty}")
   let title_mid = ty + th / 2.0
-  for label in ["返回", "Claude · Willow", "对话信息", "更多"] {
+  for label in ["返回", "对话信息", "更多"] {
     let found = t.semantics().iter().find_first(fn(s) { s.role == @ui.Role::Button && s.label == label })
     guard found is Some(s) else { fail("missing button \{label}") }
     let btn_mid = s.rect.1 + s.rect.3 / 2.0
     assert_true((title_mid - btn_mid).abs() < 0.5, msg="title mid \{title_mid} != \{label} mid \{btn_mid}")
   }
+  assert_true(composer_agent_rect(t) is Some(_), msg="agent mark sits above composer")
   assert_eq(bar_node_audit(t), [])
 }
 
 ///|
-test "小屏顶栏：对话有服务和后台任务时，打开它们的圆键有名字（读屏念得出、测试按名字找得到）" {
+test "小屏活动条：对话有服务和后台任务时，打开它们的胶囊位于 composer 上方且有名字（读屏念得出、测试按名字找得到）" {
   let (t, _) = chat_bar_node_tester("短标题", has_jobs=true)
   let keys = t.all(Button, label="服务和后台任务")
   assert_eq(keys.length(), 1, msg="the jobs key, by its name")
+  assert_true(keys[0].rect.1 > 400.0, msg="jobs pill sits above composer: \{Repr(keys[0].rect)}")
 }
 
 ///|
 test "小屏顶栏：放不下而直接展开到第 2 行的对话，打开在上次离开的消息：那条消息整条在展开后的顶栏下，不被第 2 行盖住" {
   let tight_title = "极窄标题测试：当第 1 行连三个汉字加省略号都放不下时自动展开"
-  let (t, _) = chat_bar_node_tester(tight_title, has_jobs=true, w=290.0, msg_count=14, at=14.0)
+  let (t, _) = chat_bar_node_tester(tight_title, archivable=true, w=230.0, msg_count=14, at=14.0)
   let bar_ref : ChatRef = { station: "ws1/st1", session: "s-c1", title: tight_title, station_name: "Willow" }
   t.run_for(@ui.move_most_ms)
   let extra = bar_extra_target(bar_ref)
@@ -309,72 +322,30 @@ test "小屏顶栏：放不下而直接展开到第 2 行的对话，打开在�
   assert_true(at[0] < foot + 60.0, msg="its first line at \{at[0]}, the bar's foot at \{foot}")
 }
 
-test "小屏顶栏：归档或服务键刚出现就又消失（两帧之间，或刚画出第一帧），agent 标签从它半路所在之处直接回原位，每帧移动不到 8pt，不残留上一段位移" {
-  for cause in ["archive", "jobs"] {
-    for back in ["between", "frame"] {
-      let archivable = @signals.signal(false)
-      let jobs = @signals.signal(false)
-      let on = if cause == "archive" { archivable } else { jobs }
-      let (t, w) = bar_at_drops(archivable, jobs, 20.0)
-      let x0 = bar_tile_drawn(t).map(fn(d) { d.0 }).unwrap_or(-1000.0)
-      // it comes and goes again: 5 ms on, before a frame draws it (between), or at its first frame (frame)
-      let (xs, steps) = bar_tile_way(
-        t,
-        fn() {
-          on.set(true)
-          if back == "between" {
-            t.advance(between_frames_ms)
-          } else {
-            t.frame()
-          }
-          on.set(false)
-        },
-        @ui.move_most_ms,
-      )
-      assert_eq(steps, [], msg="\{cause} \{back} at \{w}: turned back: \{Repr(xs)}")
-      assert_eq(xs[xs.length() - 1].0, x0, msg="\{cause} \{back} at \{w}: back where it was: \{Repr(xs)}")
-      assert_eq(bar_node_audit(t), [], msg="\{cause} \{back}")
-    }
-  }
-}
-
-///|
-/// Where the first agent's tile in the bar is drawn now (its ground: the soft card it stands on, a mark's height), on
-/// its way too.
-fn bar_tile_drawn(t : @ui.Tester) -> (Double, Double)? {
-  let card = @sf.theme().p.card
-  for r in t.drawn_rects() {
-    if r.4 == card && r.1 < 60.0 && (r.3 - mark_side()).abs() < 0.5 && r.2 > mark_side() {
-      return Some((r.0, r.2))
-    }
-  }
-  None
+test "小屏顶栏：归档键出现使人头栈刚好放不下时，人头在那一刻一步离开、消失时一步回来，全过程零 audit 告警" {
+  let archivable = @signals.signal(false)
+  let (t0, _) = chat_bar_node_tester("梳理发布清单", people=1, archivable_on=@signals.signal(false))
+  guard bar_button_x(t0, tr("android-chat.info.title")) is Some(end0) else { fail("no 对话信息 in the bar") }
+  let people_rects = t0.drawn_rects().filter(fn(r) { r.1 < 60.0 && (r.2 - 19.0).abs() < 0.5 && (r.3 - 19.0).abs() < 0.5 })
+  assert_true(people_rects.length() > 0, msg="person drawn at 390")
+  let p_end = people_rects[0].0 + people_rects[0].2
+  let left = end0 - 8.0 - p_end
+  let w = 390.0 - left + 16.0
+  let (t, _) = chat_bar_node_tester("梳理发布清单", people=1, archivable_on=archivable, w~)
+  assert_true(bar_people_drawn(t), msg="at \{w}: person drawn while there is room")
+  archivable.set(true)
+  t.run_for(@ui.move_most_ms)
+  assert_true(!bar_people_drawn(t), msg="at \{w}: person left short of room")
+  archivable.set(false)
+  t.run_for(@ui.move_most_ms)
+  assert_true(bar_people_drawn(t), msg="at \{w}: person back when room returns")
+  assert_eq(bar_node_audit(t), [])
 }
 
 ///|
 /// Whether the chat's people are drawn in the bar (their faces' rings, 19 across).
 fn bar_people_drawn(t : @ui.Tester) -> Bool {
   t.drawn_rects().iter().any(fn(r) { r.1 < 60.0 && (r.2 - 19.0).abs() < 0.5 && (r.3 - 19.0).abs() < 0.5 })
-}
-
-///|
-/// A bar of a chat of one person and its agent (the fixture's), as wide as leaves `slack` of room past its agent's
-/// tile while 归档 and the services' key are not there: less than one of them takes, more than the person does. The
-/// two as `archivable` and `jobs` say.
-fn bar_at_drops(
-  archivable : @signals.Signal[Bool],
-  jobs : @signals.Signal[Bool],
-  slack : Double,
-) -> (@ui.Tester, Double) {
-  // (the room left past the tile at 小屏's 390, its end then the info key's start, the middle's 8 before it)
-  let (t0, _) = chat_bar_node_tester("梳理发布清单", people=1, archivable_on=@signals.signal(false), jobs_on=@signals.signal(false))
-  guard bar_tile_drawn(t0) is Some((x0, w0)) && bar_button_x(t0, tr("android-chat.info.title")) is Some(end0) else {
-    @halt.saying("no tile or 对话信息 in the bar: \{Repr(t0.drawn_rects().filter(fn(r) { r.1 < 60.0 }))}")
-  }
-  let left = end0 - 8.0 - (x0 + w0)
-  let w = 390.0 - left + slack
-  let (t, _) = chat_bar_node_tester("梳理发布清单", people=1, archivable_on=archivable, jobs_on=jobs, w~)
-  (t, w)
 }
 
 ///|
@@ -386,56 +357,6 @@ fn bar_button_x(t : @ui.Tester, label : String) -> Double? {
     }
   }
   None
-}
-
-///|
-/// Each frame's left of the agent's tile and whether the people are drawn, from the frame before `change` is made,
-/// through `ms` of the frames a host draws after it; and what of the tile steps more than 8 in a frame.
-fn bar_tile_way(t : @ui.Tester, change : () -> Unit, ms : Double) -> (Array[(Double, Bool)], Array[String]) {
-  let now = fn() { (bar_tile_drawn(t).map(fn(d) { d.0 }).unwrap_or(-1000.0), bar_people_drawn(t)) }
-  let xs = [now()]
-  t.each_frame(Some(fn() { xs.push(now()) }))
-  change()
-  t.run_shown(ms)
-  t.each_frame(None)
-  let steps = []
-  for i in 1..<xs.length() {
-    let d = xs[i].0 - xs[i - 1].0
-    if d > 8.0 || d < -8.0 {
-      steps.push("frame \{i}: \{xs[i - 1].0} → \{xs[i].0}")
-    }
-  }
-  (xs, steps)
-}
-
-///|
-test "小屏顶栏：归档或服务键出现时人头栈刚好放不下，人头在那一刻一步离开、消失时一步回来，agent 标签每帧移动不到 8pt，不急停；作为应答首次告知时直接就位" {
-  for cause in ["archive", "jobs"] {
-    let archivable = @signals.signal(false)
-    let jobs = @signals.signal(false)
-    let on = if cause == "archive" { archivable } else { jobs }
-    let (t, w) = bar_at_drops(archivable, jobs, 20.0)
-    assert_true(bar_people_drawn(t), msg="\{cause} at \{w}: the person drawn while there is room")
-    let x0 = bar_tile_drawn(t).map(fn(d) { d.0 }).unwrap_or(-1000.0)
-    // it comes: the person leaves the row at once, the tile drawn on its way from where it was
-    let (came, came_steps) = bar_tile_way(t, fn() { on.set(true) }, @ui.move_most_ms)
-    let x1 = came[came.length() - 1].0
-    assert_true(!came[came.length() - 1].1, msg="\{cause} at \{w}: the person left the row short of room: \{Repr(came)}")
-    assert_true(!came[1].1, msg="\{cause} at \{w}: the person left at the change's frame, not on the way: \{Repr(came)}")
-    assert_true(x0 - x1 >= 8.0, msg="\{cause} at \{w}: the tile moved for it: \{x0} → \{x1}")
-    assert_eq(came_steps, [], msg="\{cause} at \{w}: its way: \{Repr(came)}")
-    assert_true(came.length() > 3, msg="\{cause} at \{w}: drawn on its way: \{Repr(came)}")
-    // gone: the person back at once, the tile on its way back
-    let (went, went_steps) = bar_tile_way(t, fn() { on.set(false) }, @ui.move_most_ms)
-    assert_true(went[1].1, msg="\{cause} at \{w}: the person back at the change's frame: \{Repr(went)}")
-    assert_eq(went[went.length() - 1].0, x0, msg=cause)
-    assert_eq(went_steps, [], msg="\{cause} at \{w}: its way back: \{Repr(went)}")
-    // told as an answer (the topic's first value): at once, no way
-    let (told, _) = bar_tile_way(t, fn() { @view.answering(fn() { on.set(true) }) }, @ui.move_most_ms)
-    assert_true(told.length() >= 2, msg=cause)
-    assert_eq(told[1].0, x1, msg="\{cause} at \{w}: an answer's at once: \{Repr(told)}")
-    assert_eq(bar_node_audit(t), [], msg=cause)
-  }
 }
 
 ///|
@@ -454,15 +375,15 @@ fn bar_row2_way(t : @ui.Tester, title : String, change : () -> Unit, ms : Double
 }
 
 ///|
-test "小屏顶栏：服务键出现使标题放不下 3 字时，实时出现则第 2 行平滑展开；作为订阅首次应答出现（重进带后台任务的对话）则在其布局那一帧直接展开，不在页面横滑中途做展开动画" {
+test "小屏顶栏：归档键出现使标题放不下 3 字时，实时出现则第 2 行平滑展开；作为订阅首次应答出现则在其布局那一帧直接展开，不在页面横滑中途做展开动画" {
   let title = "极窄标题测试：当第 1 行连三个汉字加省略号都放不下时自动展开"
   let bar_ref : ChatRef = { station: "ws1/st1", session: "s-c1", title, station_name: "Willow" }
-  // (the widest bar where the services' key leaves the title less than 3 characters, found once: without it, more)
-  let mut lo = 260.0
-  let mut hi = 420.0
+  // (the widest bar where 归档 leaves the title less than 3 characters, found once: without it, more)
+  let mut lo = 180.0
+  let mut hi = 360.0
   while hi - lo > 1.0 {
     let mid = (lo + hi) / 2.0
-    chat_bar_node_tester(title, jobs_on=@signals.signal(true), w=mid, msg_count=1) |> ignore
+    chat_bar_node_tester(title, archivable_on=@signals.signal(true), w=mid, msg_count=1) |> ignore
     let open = bar_extra_target(bar_ref) > 30.0
     if open {
       lo = mid
@@ -471,21 +392,21 @@ test "小屏顶栏：服务键出现使标题放不下 3 字时，实时出现�
     }
   }
   let w = lo.floor()
-  let jobs = @signals.signal(false)
-  let (t, _) = chat_bar_node_tester(title, jobs_on=jobs, w~, msg_count=1)
-  assert_true(bar_extra_target(bar_ref) < 0.5, msg="at \{w}: its second row open without the services' key")
+  let archivable = @signals.signal(false)
+  let (t, _) = chat_bar_node_tester(title, archivable_on=archivable, w~, msg_count=1)
+  assert_true(bar_extra_target(bar_ref) < 0.5, msg="at \{w}: its second row open without archive key")
   // live: on its way
-  let came = bar_row2_way(t, title, fn() { jobs.set(true) }, @ui.move_most_ms)
-  assert_true(bar_extra_target(bar_ref) > 30.0, msg="at \{w}: its second row not opened by the services' key")
+  let came = bar_row2_way(t, title, fn() { archivable.set(true) }, @ui.move_most_ms)
+  assert_true(bar_extra_target(bar_ref) > 30.0, msg="at \{w}: its second row not opened by archive key")
   let between = came.filter(fn(a) { a > 0.0 && a < 0.99 })
   assert_true(between.length() > 3, msg="at \{w}: live, not on its way: \{Repr(came)}")
   assert_eq(bar_node_audit(t), [])
-  // told as an answer (the jobs' first value as the chat opens again): open at once, as it is laid out
-  let jobs = @signals.signal(false)
-  let (t, _) = chat_bar_node_tester(title, jobs_on=jobs, w~, msg_count=1)
-  assert_true(bar_extra_target(bar_ref) < 0.5, msg="at \{w}: its second row open without the services' key")
-  let told = bar_row2_way(t, title, fn() { @view.answering(fn() { jobs.set(true) }) }, @ui.move_most_ms)
-  assert_true(bar_extra_target(bar_ref) > 30.0, msg="at \{w}: its second row not opened by the answer")
+  // told as an answer (first value as chat opens again): open at once, as it is laid out
+  let archivable = @signals.signal(false)
+  let (t, _) = chat_bar_node_tester(title, archivable_on=archivable, w~, msg_count=1)
+  assert_true(bar_extra_target(bar_ref) < 0.5, msg="at \{w}: its second row open without archive key")
+  let told = bar_row2_way(t, title, fn() { @view.answering(fn() { archivable.set(true) }) }, @ui.move_most_ms)
+  assert_true(bar_extra_target(bar_ref) > 30.0, msg="at \{w}: its second row not opened by answer")
   let between = told.filter(fn(a) { a > 0.0 && a < 0.99 })
   assert_eq(between, [], msg="at \{w}: an answer's on its way: \{Repr(told)}")
   assert_true(told[told.length() - 1] >= 0.99, msg="at \{w}: \{Repr(told)}")

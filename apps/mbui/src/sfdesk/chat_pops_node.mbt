@@ -70,7 +70,15 @@ fn chat_jobs_pop_node(host : @view.View, src : Source, r : ChatRef, own : @view.
     }
     side_tab_open(src, r, "jobs")
   }
-  chat_pop_node(host, chat_own.jobs_open, own, jobs_pop_w, fn() { chat_pops.jobs }, fn(s) { chat_pops.jobs = s }, fn(v) {
+  chat_pop_node(
+    host,
+    chat_own.jobs_open,
+    own,
+    jobs_pop_w,
+    fn() { chat_pops.jobs },
+    fn(s) { chat_pops.jobs = s },
+    side=if own is Some(_) { Top } else { Bottom },
+    fn(v) {
     // (a service's own tab is not here yet: it opens in 任务 too)
     jobs_pop_node(
       v,
@@ -95,6 +103,7 @@ fn chat_subchats_pop_node(host : @view.View, src : Source, r : ChatRef, view : (
     subchats_pop_w,
     fn() { chat_pops.subchats },
     fn(s) { chat_pops.subchats = s },
+    side=if own is Some(_) { Top } else { Bottom },
     fn(v) {
       @sfpages.subchats_list_node(
         v,
@@ -116,9 +125,8 @@ fn chat_subchats_pop_node(host : @view.View, src : Source, r : ChatRef, view : (
 
 ///|
 /// One of the bar's popovers presented from `host` as `open` comes to say so: a panel of nodes `w` wide holding `body`,
-/// beside `own` (the bar's button) under it, its end at the button's, or the system's bars' mark (bar_anchor_node's); none
-/// of it where there is nothing to stand beside (the old view's popover beside nothing). Presented as `was`, said by
-/// `keep`; `open` set closed as it closes unsaid (gone) or for anything else; `host` let go, the panel closed with it.
+/// beside `own` (the bar's button) on `side` (`Bottom` for top-bar buttons, `Top` for composer-bar pills), its end at
+/// the button's, or the system's bars' mark (bar_anchor_node's); none of it where there is nothing to stand beside.
 fn chat_pop_node(
   host : @view.View,
   open : @signals.Signal[Bool],
@@ -127,6 +135,7 @@ fn chat_pop_node(
   was : () -> Int,
   keep : (Int) -> Unit,
   body : (@view.View) -> Unit,
+  side? : @ui.Side = Bottom,
 ) -> Unit {
   let gone = Ref(false)
   let mine = Ref(0)
@@ -139,7 +148,7 @@ fn chat_pop_node(
       return
     }
     guard !@sf.presented_open_of(was()) else { return }
-    guard bar_anchor_node(own, Bottom, End) is Some((from, side, along)) else { return }
+    guard bar_anchor_node(own, side, End) is Some((from, side, along)) else { return }
     @sf.panel_nodes("", fn(v, _) { body(v) }, from~, w~, side~, along~, gone=fn() { if !gone.val { open.set(false) } })
     mine.val = @sf.last_presented()
     keep(mine.val)
