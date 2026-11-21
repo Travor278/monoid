@@ -14,6 +14,7 @@ export const JOBS = "jobs";
 export const FILES = "files";
 export const LETTERS = "letters";
 export const THINGS = "things";
+export const SUBCHATS = "subchats";
 
 export type ClosedTabBatch = { tabs: string[]; at: number; active?: string };
 export type Tabs = { open: string[]; shown?: string; auto?: true; canReopen?: true };
@@ -129,7 +130,7 @@ export function tabsOf(kept: unknown, agents: readonly unknown[], noChat: boolea
   const auto = chosen === null && noChat && session !== null;
   const tabs = chosen ?? (auto && session !== null ? [session] : []);
   const has = chatHas(agents);
-  const known = (key: string) => key === JOBS || key === FILES || key === LETTERS || key === THINGS || isFile(key) || isView(key) || isScreen(key) || isTerminal(key) || isStationPage(key) || (key.startsWith("service:") && has.jobs.has(key.slice("service:".length))) || has.histories.has(key);
+  const known = (key: string) => key === JOBS || key === FILES || key === LETTERS || key === THINGS || key === SUBCHATS || isFile(key) || isView(key) || isScreen(key) || isTerminal(key) || isStationPage(key) || (key.startsWith("service:") && has.jobs.has(key.slice("service:".length))) || has.histories.has(key);
   const open = agents.length ? tabs.filter(known) : tabs;
   const active = isObject(kept) && typeof kept.active === "string" ? kept.active : null;
   const shown = active !== null && open.includes(active) ? active : open[0];
@@ -165,7 +166,7 @@ export function changed(kept: unknown, agents: readonly unknown[], noChat: boole
   const has = chatHas(agents);
   const { histories } = has;
   const isAgent = (key: string) => histories.has(key);
-  const known = (key: string) => key === JOBS || key === FILES || key === LETTERS || key === THINGS || isFile(key) || isView(key) || isScreen(key) || isTerminal(key) || isStationPage(key) || (key.startsWith("service:") && has.jobs.has(key.slice("service:".length))) || has.histories.has(key);
+  const known = (key: string) => key === JOBS || key === FILES || key === LETTERS || key === THINGS || key === SUBCHATS || isFile(key) || isView(key) || isScreen(key) || isTerminal(key) || isStationPage(key) || (key.startsWith("service:") && has.jobs.has(key.slice("service:".length))) || has.histories.has(key);
   const tab = change.tab ?? "";
   const keep = (tabs: string[], front: string | null, closed: ClosedTabBatch[] = prevClosed): Kept => {
     const trimmed = closed.length > CLOSED_MAX ? closed.slice(closed.length - CLOSED_MAX) : closed;

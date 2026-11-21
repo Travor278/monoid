@@ -441,7 +441,7 @@ export const CHAT_ARCHIVE = {
 export const CHAT_CONFIGURE = {
   name: "chat_configure",
   description:
-    "Read or change a session's runtime, model, effort, speed, context or preset, on this station or another station of the workspace. Omit change fields to inspect its current config; omit chat (or pass \"self\") for your own session. Changes take effect on the next turn (or once the running turn ends) and post a notice in that chat. Skill stillfail-chats says more.",
+    "Read or change a session's runtime, model, effort, speed, context, preset or ownership (for), on this station or another station of the workspace. Omit change fields to inspect its current config; omit chat (or pass \"self\") for your own session. Changes take effect on the next turn (or once the running turn ends) and post a notice in that chat. Skill stillfail-chats says more.",
   inputSchema: {
     type: "object",
     properties: {
@@ -454,6 +454,7 @@ export const CHAT_CONFIGURE = {
       context: { type: "integer", minimum: 0, description: "Max context tokens (0 resets to the model's full window)." },
       preset: { type: "string", description: "Apply a preset's model config from this station by name or id (cannot combine with runtime/model/effort/speed/fast/context)." },
       repick: { type: "boolean", description: "Hand account selection back to the station and repick now." },
+      for: { type: "string", enum: ["me", "person"], description: "Change ownership: \"me\" to lead this chat as your sub-chat, \"person\" to hand it back to people." },
     },
     additionalProperties: false,
   },

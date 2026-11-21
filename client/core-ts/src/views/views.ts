@@ -3270,6 +3270,7 @@ export class Views implements Owner {
         out.archived = true;
         out.note = t("core-views.search.archived");
       }
+      if (get(o, "led") === true) out.led = true;
       return [out];
     });
   }
@@ -3307,6 +3308,49 @@ export class Views implements Owner {
     return { station: at, session, title, text: t("core-views.opener", { title }), ...(found?.archived === true ? { archived: true, note: t("core-views.search.archived") } : {}),
       // (it leads this one: chat_create for me. What it asks is its leader's, and the board shows it under its leader)
       ...(get(o, "led") === true ? { led: true } : {}) };
+  }
+
+  /// The chain of led parent chats (`opener.led === true` traced upward), root first, ending with its direct opener.
+  /// Empty when the chat is not led (zero DB reads for ordinary chats and chats opened for a person).
+  #openers(station: string, raw: J): J[] {
+    const first = get(raw, "opener");
+    if (get(first, "led") !== true || str(get(first, "session")) === null) return [];
+    const MAX_OPENERS = 8;
+    const seen = new Set<string>();
+    const mark = (st: string, id: string | null) => { if (id !== null && id !== "") seen.add(`${st}\u0001${id}`); };
+    mark(station, str(get(raw, "id")));
+    mark(station, str(get(raw, "session")));
+    const chain: J[] = [];
+    let cur: J = raw;
+    let curStation = station;
+    while (chain.length < MAX_OPENERS) {
+      const o = get(cur, "opener");
+      if (get(o, "led") !== true) break;
+      const session = str(get(o, "session"));
+      if (session === null) break;
+      const there = str(get(o, "station"));
+      const at = there !== null && there !== "" ? `${ofAddress(curStation)}/${there}` : curStation;
+      const key = `${at}\u0001${session}`;
+      if (seen.has(key)) break;
+      const found = this.#core.data.chatNamed(at, session);
+      const parentRow = found?.row as J | undefined;
+      const parentId = isObject(parentRow) ? str(get(parentRow, "id")) : null;
+      const parentSession = isObject(parentRow) ? str(get(parentRow, "session")) : null;
+      if ((parentId !== null && seen.has(`${at}\u0001${parentId}`)) || (parentSession !== null && seen.has(`${at}\u0001${parentSession}`))) break;
+      seen.add(key);
+      mark(at, parentId);
+      mark(at, parentSession);
+      const title = str(get(parentRow, "title")) || str(get(o, "title")) || t("core-views.new_chat");
+      chain.push({
+        station: at, session, title, text: t("core-views.opener", { title }),
+        ...(found?.archived === true ? { archived: true, note: t("core-views.search.archived") } : {}),
+        led: true,
+      });
+      if (!isObject(parentRow)) break;
+      cur = parentRow;
+      curStation = at;
+    }
+    return chain.reverse();
   }
 
   /// A row whose chat has a message sent here that did not go: marked red, its second line saying which (`unsent`: drawn
@@ -4042,6 +4086,8 @@ export class Views implements Owner {
     if (row !== undefined && row.pinned !== undefined) view.pinned = typeof row.pinned === "number";
     const opener = row !== undefined ? this.#opener(station, row) : null;
     if (opener !== null) view.opener = opener;
+    const openers = row !== undefined ? this.#openers(station, row) : [];
+    if (openers.length > 0) view.openers = openers;
     // the chats it opened, each where it stands, for its bar's list of them
     const opened = row !== undefined ? this.#opened(station, row) : [];
     if (opened.length > 0) {

@@ -1549,6 +1549,12 @@ export class Store {
     return r ? toOpened(r) : null;
   }
 
+  /// An `opened_chats` row by `(childStation, child)`, if present.
+  openedRecord(childStation: string, child: string): Opened | null {
+    const r = this.#one("SELECT * FROM opened_chats WHERE child_station = ? AND child = ?", childStation, child);
+    return r ? toOpened(r) : null;
+  }
+
   /// How many chats `createdBy` started here since `since`, by runtime and model (what chat_create runs when it is told
   /// no model: sessions/model-choice.ts).
   modelsUsedBy(createdBy: string, since: number): { runtime: string; model: string | null; n: number }[] {
@@ -1572,6 +1578,86 @@ export class Store {
         if (r.parent_station === "") changes.push({ type: "session", key: r.parent as string });
       }
     });
+  }
+
+  /// Changes whether an opened chat is led by its opener (`for: "person"` sets `led = 0`).
+  /// Emits `chatMark` and `session` for affected local sessions so clients refresh immediately.
+  setOpenedLed(childStation: string, child: string, led: boolean): { changed: boolean; prev: Opened | null } {
+    let changed = false;
+    let prev: Opened | null = null;
+    this.#with((changes) => {
+      const existing = this.#one("SELECT * FROM opened_chats WHERE child_station = ? AND child = ?", childStation, child);
+      if (!existing) return;
+      prev = toOpened(existing);
+      if (prev.led === led) return;
+      this.#run("UPDATE opened_chats SET led = ? WHERE child_station = ? AND child = ?", led ? 1 : 0, childStation, child);
+      changed = true;
+      if (childStation === "") {
+        changes.push({ type: "chatMark", thread: null, session: child }, { type: "session", key: child });
+      }
+      if (prev.parentStation === "") {
+        changes.push({ type: "chatMark", thread: null, session: prev.parent }, { type: "session", key: prev.parent });
+      }
+    });
+    return { changed, prev };
+  }
+
+  /// Adopts a chat as led by `(parentStation, parent)` (`for: "me"`): updates an existing row preserving
+  /// `key`/`title`/`link`/`created_at`, or inserts a new row with `key = "adopt:" + child`.
+  adoptOpened(o: { childStation: string; child: string; parentStation: string; parent: string; title: string | null; link: string | null; openerTitle?: string | null }): { changed: boolean; prev: Opened | null } {
+    let changed = false;
+    let prev: Opened | null = null;
+    this.#with((changes) => {
+      const existing = this.#one("SELECT * FROM opened_chats WHERE child_station = ? AND child = ?", o.childStation, o.child);
+      if (existing) {
+        prev = toOpened(existing);
+        if (prev.led === true && prev.parentStation === o.parentStation && prev.parent === o.parent) {
+          const titleChanged = o.title !== null && o.title !== prev.title;
+          const linkChanged = o.link !== null && o.link !== prev.link;
+          if (titleChanged || linkChanged) {
+            this.#run(
+              "UPDATE opened_chats SET title = COALESCE(?, title), link = COALESCE(?, link) WHERE child_station = ? AND child = ?",
+              o.title, o.link, o.childStation, o.child,
+            );
+            if (o.childStation === "") {
+              changes.push({ type: "chatMark", thread: null, session: o.child }, { type: "session", key: o.child });
+            }
+            if (o.parentStation === "") {
+              changes.push({ type: "chatMark", thread: null, session: o.parent }, { type: "session", key: o.parent });
+            }
+          }
+          return;
+        }
+        this.#run(
+          "UPDATE opened_chats SET parent_station = ?, parent = ?, title = COALESCE(?, title), link = COALESCE(?, link), opener_title = ?, led = 1 WHERE child_station = ? AND child = ?",
+          o.parentStation, o.parent, o.title, o.link, o.openerTitle ?? null, o.childStation, o.child,
+        );
+        changed = true;
+        if (o.childStation === "") {
+          changes.push({ type: "chatMark", thread: null, session: o.child }, { type: "session", key: o.child });
+        }
+        if (o.parentStation === "") {
+          changes.push({ type: "chatMark", thread: null, session: o.parent }, { type: "session", key: o.parent });
+        }
+        if (prev.parentStation === "" && (prev.parent !== o.parent || prev.parentStation !== o.parentStation)) {
+          changes.push({ type: "chatMark", thread: null, session: prev.parent }, { type: "session", key: prev.parent });
+        }
+        return;
+      }
+      const at = this.now();
+      this.#run(
+        "INSERT INTO opened_chats (child_station, child, parent_station, parent, key, title, link, opener_title, led, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
+        o.childStation, o.child, o.parentStation, o.parent, `adopt:${o.child}`, o.title, o.link, o.openerTitle ?? null, at,
+      );
+      changed = true;
+      if (o.childStation === "") {
+        changes.push({ type: "chatMark", thread: null, session: o.child }, { type: "session", key: o.child });
+      }
+      if (o.parentStation === "") {
+        changes.push({ type: "chatMark", thread: null, session: o.parent }, { type: "session", key: o.parent });
+      }
+    });
+    return { changed, prev };
   }
 
   /// The runtime sessions the session has run in, the first first, ending with the one it runs in now.

@@ -2494,6 +2494,65 @@ test("a_chat_an_agent_opened_has_the_way_back_to_its_opener_over_its_messages", 
   t.set(overview("ws/a"), overviewOf([], []));
   await t.read(u, 1);
   assert.deepEqual(u.value.opener, { station: "ws/a", session: "p", title: "发起的对话", text: "由「发起的对话」创建" });
+  // Opened for a person (no led: true): opener stays for info, openers is empty.
+  assert.deepEqual(u.value.openers, []);
+});
+
+test("a_chat_traces_its_multi_level_led_openers_chain_across_stations_with_cycle_and_depth_guard", async () => {
+  const t = setup();
+  const u = ui();
+  t.subscribe(1, chatTopic("ws/a", 7));
+  const now = t.host.nowMs();
+  t.set(sessions("ws/a"), [fullSession("k", { connect: "ember" })]);
+  t.set(threads("ws/a"), [thread(7, ["k"], now)]);
+  t.set(pageOf("ws/a", 7), page(1, ["开始"], null));
+  t.set(overview("ws/a"), overviewOf([], []));
+
+  // Ordinary chat: no opener and empty openers
+  t.set(rows("ws/a"), [{ ...row("k", now), thread: 7 }]);
+  await t.read(u, 1);
+  assert.equal(u.value.opener, undefined);
+  assert.deepEqual(u.value.openers, []);
+
+  // Multi-level led chain across stations: root (ws/b) -> mid (ws/a) -> k (ws/a)
+  t.set(rows("ws/b"), [{ ...row("root", now - 2000), title: "根规划" }]);
+  t.set(rows("ws/a"), [
+    { ...row("k", now), thread: 7, opener: { session: "mid", title: "旧名", led: true } },
+    { ...row("mid", now - 1000), title: "接口重构", opener: { station: "b", session: "root", title: "旧根名", led: true } },
+  ]);
+  await t.read(u, 1);
+  assert.deepEqual(u.value.openers, [
+    { station: "ws/b", session: "root", title: "根规划", text: "由「根规划」创建", led: true },
+    { station: "ws/a", session: "mid", title: "接口重构", text: "由「接口重构」创建", led: true },
+  ]);
+  assert.deepEqual(u.value.opener, u.value.openers[1]);
+
+  // Stops when an ancestor edge is not led (opened for person)
+  t.set(rows("ws/a"), [
+    { ...row("k", now), thread: 7, opener: { session: "mid", title: "旧名", led: true } },
+    { ...row("mid", now - 1000), title: "接口重构", opener: { station: "b", session: "root", title: "旧根名" } },
+  ]);
+  await t.read(u, 1);
+  assert.deepEqual(u.value.openers.map((o: J) => o.session), ["mid"]);
+
+  // Cycle protection: k -> p1 -> p2 -> k
+  t.set(rows("ws/a"), [
+    { ...row("k", now), thread: 7, opener: { session: "p1", title: "P1", led: true } },
+    { ...row("p1", now - 1000), title: "P1", opener: { session: "p2", title: "P2", led: true } },
+    { ...row("p2", now - 2000), title: "P2", opener: { session: "k", title: "K", led: true } },
+  ]);
+  await t.read(u, 1);
+  assert.deepEqual(u.value.openers.map((o: J) => o.session), ["p2", "p1"]);
+
+  // Depth cap at 8 levels
+  const deep: J[] = [{ ...row("k", now), thread: 7, opener: { session: "n1", title: "N1", led: true } }];
+  for (let i = 1; i <= 10; i++) {
+    deep.push({ ...row(`n${i}`, now - i * 1000), title: `N${i}`, ...(i < 10 ? { opener: { session: `n${i + 1}`, title: `N${i + 1}`, led: true } } : {}) });
+  }
+  t.set(rows("ws/a"), deep);
+  await t.read(u, 1);
+  assert.equal(u.value.openers.length, 8);
+  assert.deepEqual(u.value.openers.map((o: J) => o.session), ["n8", "n7", "n6", "n5", "n4", "n3", "n2", "n1"]);
 });
 
 test("a_chat_whose_agent_opened_others_lists_them_each_where_it_stands", async () => {
@@ -2505,18 +2564,21 @@ test("a_chat_whose_agent_opened_others_lists_them_each_where_it_stands", async (
   t.set(threads("ws/a"), [thread(7, ["k"], now)]);
   t.set({ topic: "archivedRows", station: "ws/a" }, [{ ...row("old", now), title: "归档的", archived: { at: now, by: "auto" } }]);
   t.set(rows("ws/a"), [
-    { ...row("k", now), thread: 7, opened: [{ session: "c-need", title: "当时的名字" }, { session: "old" }, { session: "gone", title: "没了的" }] },
+    { ...row("k", now), thread: 7, opened: [{ session: "c-need", title: "当时的名字", led: true }, { session: "c-adopted", title: "被别人收归的" }, { session: "old" }, { session: "gone", title: "没了的" }] },
     { ...row("c-need", now), title: "安卓构建", agents: [{ ...session("a1"), lastTurn: { kind: "message", declared: "block", ending: "need_help", need: "选一台测试机", outcome: "completed", startedAt: 1, endedAt: 2 } }] },
+    // Adopted by another leader B: its row.opener has led: true, but k's opened entry does not -> must NOT count as k's led sub-chat.
+    { ...row("c-adopted", now), title: "被别人收归的", opener: { session: "other-leader", title: "B", led: true } },
   ]);
   t.set(pageOf("ws/a", 7), page(1, ["开始"], null));
   t.set(overview("ws/a"), overviewOf([], []));
   await t.read(u, 1);
   const v = u.value;
-  assert.equal(v.openedText, "创建了 3 个对话");
-  assert.deepEqual(v.opened.map((o: J) => [o.session, o.title, o.stateLead ?? null, o.archived ?? false]), [
-    ["c-need", "安卓构建", "need", false],
-    ["old", "归档的", null, true],
-    ["gone", "没了的", null, false],
+  assert.equal(v.openedText, "创建了 4 个对话");
+  assert.deepEqual(v.opened.map((o: J) => [o.session, o.title, o.stateLead ?? null, o.archived ?? false, o.led ?? false]), [
+    ["c-need", "安卓构建", "need", false, true],
+    ["c-adopted", "被别人收归的", null, false, false],
+    ["old", "归档的", null, true, false],
+    ["gone", "没了的", null, false, false],
   ]);
 });
 

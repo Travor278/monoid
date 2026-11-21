@@ -865,6 +865,8 @@ pub(all) struct ChatView {
   screens : Array[ChatScreen]
   /// the chat an agent opened it from: before its title in its bar, the way back there
   opener : Opener?
+  /// the chain of led parent chats (`opener.led == true`), root first, ending with its direct opener
+  openers : Array[Opener]
   /// the chats its agent made, the first first, and how many in words (创建了 3 个对话): its info's list of them
   opened : Array[OpenedChat]
   opened_text : String
@@ -1029,7 +1031,25 @@ fn chat_view_of(v : Json, messages : Array[Message], was : (Json, ChatView)?) ->
         { id: text(o, "id"), kind: text(o, "kind"), title: text(o, "title"), line: text(o, "line"), agent: flag(o, "agent") }
       })
     }),
-    opener: chat_part(v, was, "opener", fn(w) { w.opener }, fn() { opener_of(s) }),
+    opener: {
+      let o = chat_part(v, was, "opener", fn(w) { w.opener }, fn() { opener_of(s) })
+      o
+    },
+    openers: {
+      let o = chat_part(v, was, "opener", fn(w) { w.opener }, fn() { opener_of(s) })
+      match field(s, "openers") {
+        Some(_) => chat_part(v, was, "openers", fn(w) { w.openers }, fn() { openers_of(s) })
+        None =>
+          match was {
+            Some((_, w)) if physical_equal(w.opener, o) => w.openers
+            _ =>
+              match o {
+                Some(op) if op.led => [op]
+                _ => []
+              }
+          }
+      }
+    },
     opened: chat_part(v, was, "opened", fn(w) { w.opened }, fn() { opened_of(s) }),
     opened_text: text(s, "openedText"),
   }

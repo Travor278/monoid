@@ -77,6 +77,7 @@ pub fn fixture_chat_tabs(mode : String) -> Map[String, Json] {
     "chat-letters-side" => { "ws1/st1:s-c1": kept("letters") }
     "chat-things-side" => { "ws1/st1:s-c1": kept("things") }
     "chat-jobs-side" => { "ws1/st1:s-c1": kept("jobs") }
+    "chat-subchats-panel" => { "ws1/st1:s-c1": kept("subchats") }
     "chat-files-side" => { "ws1/st1:s-c1": kept("files") }
     "chat-drive-side" => { "ws1/st1:s-c1": kept("drive:[\"ws1/st1\"]") }
     "chat-station-side" => { "ws1/st1:s-c1": { "tabs": ["files", "station:[\"ws1/st1\"]"], "active": "station:[\"ws1/st1\"]" } }
@@ -542,11 +543,117 @@ fn with_opened(v : Json?) -> Json? {
           "mark": "block",
           "stateLead": "need",
           "stateText": "要你帮忙：测试机的磁盘满了，要不要清理旧的缓存？",
+          "led": true,
         },
-        { "station": "ws1/st1", "session": "s-c4", "title": "给设置页加一个深色模式开关", "stateLead": "done", "stateText": "做完了：开关和三处颜色都改好了" },
-        { "station": "ws1/st1", "session": "s-c12", "title": "旧版引导页的截图", "archived": true, "note": "已归档" },
+        {
+          "station": "ws1/st1",
+          "session": "s-c4",
+          "title": "给设置页加一个深色模式开关",
+          "stateLead": "done",
+          "stateText": "做完了：开关和三处颜色都改好了",
+          "led": true,
+        },
+        { "station": "ws1/st1", "session": "s-c12", "title": "旧版引导页的截图", "archived": true, "note": "已归档", "led": true },
       ]
       m["openedText"] = "创建了 3 个对话"
+      Some(Json::object(m))
+    }
+    other => other
+  }
+}
+
+///|
+/// Rich led sub-chats fixture (chat-subchats-pop, chat-subchats-panel): 4 led sub-chats (running, waiting, done,
+/// archived) plus 1 non-led chat opened for a person (excluded from sub-chats bar entry, popover, panel and sheet).
+fn with_subchats(v : Json?) -> Json? {
+  match v {
+    Some(Object(m)) => {
+      let m = m.copy()
+      m["opened"] = [
+        {
+          "station": "ws1/st1",
+          "session": "s-c2",
+          "title": "安卓构建与冒烟测试",
+          "mark": "run",
+          "stateText": "正在运行端到端用例",
+          "led": true,
+        },
+        {
+          "station": "ws1/st2",
+          "session": "s-c3",
+          "title": "夜里的构建又失败了",
+          "mark": "block",
+          "stateLead": "need",
+          "stateText": "要你帮忙：测试机的磁盘满了，要不要清理旧的缓存？",
+          "led": true,
+        },
+        {
+          "station": "ws1/st1",
+          "session": "s-c4",
+          "title": "给设置页加一个深色模式开关",
+          "stateLead": "done",
+          "stateText": "做完了：开关和三处颜色都改好了",
+          "led": true,
+        },
+        { "station": "ws1/st1", "session": "s-c12", "title": "旧版引导页的截图", "archived": true, "note": "已归档", "led": true },
+        { "station": "ws1/st1", "session": "s-c9", "title": "给产品评审建的独立讨论", "stateLead": "done", "stateText": "已整理好议程" },
+      ]
+      m["openedText"] = "创建了 5 个对话"
+      Some(Json::object(m))
+    }
+    other => other
+  }
+}
+
+///|
+/// 3-level led ancestor chain plus 2 led sub-chats (chat-lineage): exercises multi-level breadcrumb + sub-chats entry.
+fn with_lineage(v : Json?) -> Json? {
+  match v {
+    Some(Object(m)) => {
+      let m = m.copy()
+      let root : Json = {
+        "station": "ws1/st1",
+        "session": "s-c6",
+        "title": "根规划",
+        "text": "由「根规划」创建",
+        "led": true,
+      }
+      let mid : Json = {
+        "station": "ws1/st1",
+        "session": "s-c5",
+        "title": "接口重构",
+        "text": "由「接口重构」创建",
+        "led": true,
+      }
+      let parent : Json = {
+        "station": "ws1/st1",
+        "session": "s-c4",
+        "title": "任务拆分",
+        "text": "由「任务拆分」创建",
+        "led": true,
+      }
+      m["opener"] = parent
+      m["openers"] = [root, mid, parent]
+      m["opened"] = [
+        {
+          "station": "ws1/st1",
+          "session": "s-c2",
+          "title": "安卓构建与冒烟测试",
+          "mark": "run",
+          "stateText": "正在运行端到端用例",
+          "led": true,
+        },
+        {
+          "station": "ws1/st2",
+          "session": "s-c3",
+          "title": "夜里的构建又失败了",
+          "mark": "block",
+          "stateLead": "need",
+          "stateText": "要你帮忙：测试机的磁盘满了，要不要清理旧的缓存？",
+          "led": true,
+        },
+      ]
+      m["openedText"] = "创建了 2 个对话"
       Some(Json::object(m))
     }
     other => other
@@ -1212,6 +1319,10 @@ fn fixture_answer(f : Fixture, name : String, params : Map[String, Json], versio
     "profiles" => @settings.profiles_rows(@settings.profiles_of_stations(value, wholes()))
     "profile" =>
       @settings.profile_said(fixture_topic_inner(f, "profiles", { "scope": Json::string(text(Some(Json::object(params)), "scope")) }), params)
+    "chat" if f.mode.has_prefix("chat-subchats") && params.get("session") is Some(String("s-c1")) =>
+      fixture_with_tabs(f, params, with_subchats(value))
+    "chat" if f.mode == "chat-lineage" && params.get("session") is Some(String("s-c1")) =>
+      fixture_with_tabs(f, params, with_lineage(value))
     "chat" if f.mode.has_prefix("chat-opened") && params.get("session") is Some(String("s-c1")) =>
       fixture_with_tabs(f, params, with_opened(value))
     "chat" if f.mode.has_prefix("chat-opener") && params.get("session") is Some(String("s-c1")) =>

@@ -446,6 +446,8 @@
   "station.session.openedForPerson": "Opened a chat for you: {chat}",
   "station.session.ledBy": "Led by {from}:",
   "station.session.openedForYou": "Opened for you by {from}:",
+  "station.session.handedToPerson": "Handed over to you (no longer led as a sub-chat by “{from}”)",
+  "station.session.adoptedByAgent": "Now led as a sub-chat by “{from}”",
   "station.session.modelOff": "“{profile}” can't run {model}: pick another model",
   "station.session.noProfile": "No Profile can run {runtime}",
   "station.session.noProfileHere": "No Profile can run {runtime} for this workspace's chats; an admin of the station's home workspace can enable one",

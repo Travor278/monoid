@@ -12,7 +12,7 @@
 /// Whether `front` (one the panel shows: side_shows) is one of the chat's agents' histories.
 fn side_history_tab(front : String) -> Bool {
   front != "" &&
-  !(front is ("jobs" | "files" | "letters" | "things")) &&
+  !(front is ("jobs" | "files" | "letters" | "things" | "subchats")) &&
   tab_service(front) is None &&
   tab_file(front) is None &&
   station_tab(front) is None &&
@@ -45,7 +45,7 @@ fn side_terminal_tab(front : String) -> Bool {
 ///|
 /// Whether `front` is one of the chat's own tabs made as nodes (side_own_node): 任务, agent 往来, 图片、文件和链接.
 fn side_own_tab(front : String) -> Bool {
-  front is ("jobs" | "letters" | "things")
+  front is ("jobs" | "letters" | "things" | "subchats")
 }
 
 ///|
@@ -720,6 +720,26 @@ fn side_own_node(
 ) -> Unit {
   q.box(fn(s) {
     s.grow(Is(1.0)).shrink(Is(1.0)).basis(Is(Some(0.0))).min_height(Is(Some(0.0))).clips(Is(true)) |> ignore
+    if tab == "subchats" {
+      s
+      .scrolls(@view.Scroll::new(), fn(sc) {
+        sc.padding(Is((8.0, 8.0, 8.0, 12.0))) |> ignore
+        @sfpages.subchats_list_node(
+          sc,
+          fn() {
+            match @sfbase.chat_view_now(src, r) {
+              Some(cv) => cv.opened
+              None => []
+            }
+          },
+          show_head=true,
+        )
+      })
+      .grow(Is(1.0))
+      .min_height(Is(Some(0.0)))
+      |> ignore
+      return
+    }
     if tab == "jobs" {
       jobs_tab_node(s, src, r, tips, foot_card, fn(job) {
         // (over the whole window, the command key not held as it was pressed: sfbase's tab_full.mbt; not in the panel

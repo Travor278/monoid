@@ -664,6 +664,40 @@ test("3. chat_configure & Admin API settings dynamically update model/effort/spe
     assert.equal(parsedCfg.updated, true);
     assert.equal(parsedCfg.after.model, "claude-opus-4-6");
     assert.equal(parsedCfg.after.effort, "high");
+    assert.equal(parsedCfg.after.led, false);
+    assert.equal(parsedCfg.after.leader, null);
+
+    // Ownership via chat_configure { for: "me" | "person" } on MoonBit station:
+    const adoptRes = await tool(s.door, "t-ctrl", "chat_configure", { chat: "chat:c-cfg", for: "me" });
+    assert.equal(adoptRes.error, false, adoptRes.text);
+    const adopted = JSON.parse(adoptRes.text);
+    assert.equal(adopted.updated, true);
+    assert.equal(adopted.after.led, true);
+    assert.equal(adopted.after.leader, "chat:c-ctrl");
+    assert.equal(s.store.openerOf("chat:c-cfg")?.led, true);
+    assert.equal(s.store.openerOf("chat:c-cfg")?.parent, "chat:c-ctrl");
+    assert.equal(s.store.openerOf("chat:c-cfg")?.title, null);
+    assert.equal(s.store.openerOf("chat:c-cfg")?.openerTitle, null);
+
+    // Protections: self-lead and cycle refused.
+    const selfErr = await tool(s.door, "t-ctrl", "chat_configure", { for: "me" });
+    assert.equal(selfErr.error, true);
+    assert.match(selfErr.text, /cannot lead your own chat/);
+    const cycleErr = await tool(s.door, "t-cfg", "chat_configure", { chat: "chat:c-ctrl", for: "me" });
+    assert.equal(cycleErr.error, true);
+    assert.match(cycleErr.text, /already leads this one/);
+
+    // Release back to person and verify idempotency.
+    const relRes = await tool(s.door, "t-ctrl", "chat_configure", { chat: "chat:c-cfg", for: "person" });
+    assert.equal(relRes.error, false, relRes.text);
+    const released = JSON.parse(relRes.text);
+    assert.equal(released.updated, true);
+    assert.equal(released.after.led, false);
+    assert.equal(released.after.leader, null);
+    assert.equal(s.store.openerOf("chat:c-cfg")?.led, false);
+    const relAgain = await tool(s.door, "t-ctrl", "chat_configure", { chat: "chat:c-cfg", for: "person" });
+    assert.equal(relAgain.error, false, relAgain.text);
+    assert.equal(JSON.parse(relAgain.text).updated, false);
 
     // Turn 2: must immediately use new model/effort/fastMode in claude argv and agent_identity
     const m2 = await httpJson(s.door, `/admin-api/threads/${tCfg.id}/messages`, "POST", { text: "turn two" });

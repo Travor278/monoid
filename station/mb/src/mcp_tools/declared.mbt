@@ -484,7 +484,7 @@ let decl_chat_archive : String =
 let decl_chat_configure : String =
   #|{
   #|  "name": "chat_configure",
-  #|  "description": "Read or change a session's runtime, model, effort, speed, context or preset, on this station or another station of the workspace. Omit change fields to inspect its current config; omit chat (or pass \"self\") for your own session. Changes take effect on the next turn (or once the running turn ends) and post a notice in that chat. Skill stillfail-chats says more.",
+  #|  "description": "Read or change a session's runtime, model, effort, speed, context, preset or ownership (for), on this station or another station of the workspace. Omit change fields to inspect its current config; omit chat (or pass \"self\") for your own session. Changes take effect on the next turn (or once the running turn ends) and post a notice in that chat. Skill stillfail-chats says more.",
   #|  "inputSchema": {
   #|    "type": "object",
   #|    "properties": {
@@ -530,6 +530,14 @@ let decl_chat_configure : String =
   #|      "repick": {
   #|        "type": "boolean",
   #|        "description": "Hand account selection back to the station and repick now."
+  #|      },
+  #|      "for": {
+  #|        "type": "string",
+  #|        "enum": [
+  #|          "me",
+  #|          "person"
+  #|        ],
+  #|        "description": "Change ownership: \"me\" to lead this chat as your sub-chat, \"person\" to hand it back to people."
   #|      }
   #|    },
   #|    "additionalProperties": false

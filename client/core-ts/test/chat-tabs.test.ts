@@ -19,8 +19,8 @@ const open = (tab: string): Change => ({ action: "open", tab, auto: true });
 const close = (tab: string): Change => ({ action: "close", tab, auto: true });
 
 test("a_chat_shows_the_tabs_kept_it_has_and_the_one_in_front", () => {
-  const kept = { tabs: ["a1", "gone", "service:web", "service:old", "jobs", FILE, "file:[1]", "letters", "files", SCREEN, "screen:[1]", TERMINAL, "terminal:[\"\"]"], active: "jobs" };
-  assert.deepEqual(tabsOf(kept, AGENTS, false, "a1"), { open: ["a1", "service:web", "jobs", FILE, "letters", "files", SCREEN, TERMINAL], shown: "jobs" });
+  const kept = { tabs: ["a1", "gone", "service:web", "service:old", "jobs", FILE, "file:[1]", "letters", "files", "subchats", SCREEN, "screen:[1]", TERMINAL, "terminal:[\"\"]"], active: "jobs" };
+  assert.deepEqual(tabsOf(kept, AGENTS, false, "a1"), { open: ["a1", "service:web", "jobs", FILE, "letters", "files", "subchats", SCREEN, TERMINAL], shown: "jobs" });
   // The one kept in front gone: the first.
   assert.deepEqual(tabsOf({ tabs: ["a2", "a1"], active: "gone" }, AGENTS, false, null), { open: ["a2", "a1"], shown: "a2" });
   // Its agents not known yet: all kept, the panel holding its place.
@@ -36,6 +36,7 @@ test("an_agents_history_opens_after_the_histories_open_and_anything_else_last", 
   assert.deepEqual(changed(kept, AGENTS, false, null, open("a2")), { tabs: ["a1", "a2", "jobs", "letters"], active: "a2" });
   assert.deepEqual(changed({ tabs: ["jobs"] }, AGENTS, false, null, open("a2")), { tabs: ["a2", "jobs"], active: "a2" });
   assert.deepEqual(changed(kept, AGENTS, false, null, open("files")), { tabs: ["a1", "jobs", "letters", "files"], active: "files" });
+  assert.deepEqual(changed(kept, AGENTS, false, null, open("subchats")), { tabs: ["a1", "jobs", "letters", "subchats"], active: "subchats" });
   // One open already: brought to the front where it is.
   assert.deepEqual(changed(kept, AGENTS, false, null, open("letters")), { tabs: ["a1", "jobs", "letters"], active: "letters" });
   // Agents not known (a new chat's): last.

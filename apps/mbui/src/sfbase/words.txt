@@ -1969,6 +1969,12 @@ web-pages.chat.screen
 web-pages.chat.screenAgent
 web-pages.chat.shareImage
 web-pages.chat.stop
+web-pages.chat.subchats
+web-pages.chat.subchatsRunning
+web-pages.chat.subchatsNeed
+web-pages.chat.subchatsArchived
+web-pages.chat.subchatsNone
+web-pages.chat.breadcrumbMore
 web-pages.chat.stopAsked
 web-pages.chat.stopTurn
 web-pages.chat.thisMachine

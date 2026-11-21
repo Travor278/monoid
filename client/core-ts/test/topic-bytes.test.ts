@@ -142,6 +142,8 @@ const chatEmpty = (older: boolean, compact: boolean): Record<string, string> => 
   "messages[].card.vaultAsk.saveTargets": STATE, "decision.card.vaultAsk.saveTargets": STATE,
   // (what its agents said in Slack before its first message read: one read from its first message has said nothing before it)
   elsewhere: older ? OLDER : STATE,
+  // (the chat weighed is a top-level user chat in the main list, not a led sub-chat)
+  openers: STATE,
   outbox: SAVING,
   ...(older ? { "messages[].notice.lines": OLDER } : {}),
   // (compact sends a chat's jobs as `chatJobs` does: output.ts compactChat)

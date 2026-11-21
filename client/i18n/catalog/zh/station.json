@@ -440,6 +440,8 @@
   "station.session.openedForPerson": "已为你创建对话：{chat}",
   "station.session.ledBy": "由 {from} 领导的 chat：",
   "station.session.openedForYou": "{from} 为你开的 chat：",
+  "station.session.handedToPerson": "已放权交由你直接处理（不再由「{from}」作为子会话管理）",
+  "station.session.adoptedByAgent": "已由「{from}」收归为子会话管理",
   "station.session.modelOff": "「{profile}」无法运行 {model}：请换用其他模型",
   "station.session.noProfile": "没有可运行 {runtime} 的 Profile",
   "station.session.noProfileHere": "此 workspace 的对话没有可运行 {runtime} 的 Profile：请 station 所属 workspace 的管理员为某个 Profile 勾选此 workspace",

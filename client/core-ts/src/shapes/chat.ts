@@ -333,6 +333,7 @@ export const CHAT_SHAPES: Record<string, Shape> = {
     ["xshare", opt("ChatShare"), { doc: "Its sharing with the viewer's other workspaces; absent while it has no chat or agent, or\nthe viewer is in no other workspace." }],
     ["publish", opt("ChatPublish"), { doc: "Whether the viewer may draw it as a picture (分享图片); absent while it has no chat." }],
     ["opener", opt("Opener"), { doc: "The chat an agent opened it from, as its row's (`ChatItem.opener`): the way back there over its messages.\nAbsent otherwise." }],
+    ["openers", vec("Opener"), { default: true, doc: "The chain of led parent chats (`opener.led === true`) that led to this one, root first, ending with `opener`. Empty when not led." }],
     ["opened", vec("OpenedChat"), { default: true, doc: "The chats its agent opened, the first first, for its bar's list of them. Empty when none." }],
     ["openedText", opt("String"), { said: true, doc: "With `opened`: how many, in words (创建了 3 个对话). Absent otherwise." }],
     ["tabs", opt("ChatTabs"), { doc: "Its side panel's tabs as this device keeps them for it (prefs `chatTabs`, chat-tabs.ts); absent from a core\nbefore it." }],
@@ -361,7 +362,7 @@ export const CHAT_SHAPES: Record<string, Shape> = {
     ["on", "bool", { doc: "Ticked: what is sent from here is copied there too, the station's bot saying there who wrote it on still.fail,\nand what. Off until ticked, for as long as the app runs." }],
   ], { doc: "A thread a chat's messages can be copied to ( \"抄送\")." }),
   ChatTabs: struct([
-    ["open", vec("String"), { doc: "The tabs open beside it, in their order, of those kept the ones it has (an agent's history by its session's key,\n`service:<job>` one of its agents' services, `jobs`, `files`, `letters`, `file:[…]` a visualization, `screen:[…]` a station's\nscreen); all kept while its\nagents are not known. None kept: none, or where its agent has no chat yet its history (`auto`)." }],
+    ["open", vec("String"), { doc: "The tabs open beside it, in their order, of those kept the ones it has (an agent's history by its session's key,\n`service:<job>` one of its agents' services, `jobs`, `files`, `letters`, `things`, `subchats`, `file:[…]` a visualization, `screen:[…]` a station's\nscreen); all kept while its\nagents are not known. None kept: none, or where its agent has no chat yet its history (`auto`)." }],
     ["shown", opt("String"), { doc: "The one in front: as kept, else the first; none with none open." }],
     ["auto", opt("bool"), { doc: "None kept: `open` is what the chat opens by itself (its agent's history, it having no chat yet). A client where\nthe panel would lie over the chat shows none, and changes them with `auto: false`." }],
     ["canReopen", opt("bool"), { doc: "Whether closed tabs are kept in history that can be reopened (`chat.tabs.reopen`). Absent when none." }],
@@ -469,6 +470,7 @@ export const CHAT_SHAPES: Record<string, Shape> = {
     ["stateLead", opt("StateLead"), { doc: "What leads `stateText`, for a mark of a client's own." }],
     ["archived", opt("bool"), { doc: "It is in its station's archive. Absent otherwise." }],
     ["note", opt("String"), { said: true, doc: "With `archived`: 已归档." }],
+    ["led", opt("bool"), { doc: "This chat's agent leads it (chat_create for me): a sub-chat, shown in the bar's sub-chats entry. Absent for a chat opened for a person." }],
   ], { doc: "A chat a chat's agent opened (chat_create), as the chat that opened it lists them (`ChatView.opened`)." }),
   NoticeShown: struct([
     ["failed", "bool", { doc: "It says something failed (the station began it with ⚠️): drawn in red." }],

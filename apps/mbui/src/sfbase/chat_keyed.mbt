@@ -288,6 +288,7 @@ fn chat_head_same(a : ChatView, b : ChatView) -> Bool {
   physical_equal(a.cc, b.cc) &&
   physical_equal(a.screens, b.screens) &&
   physical_equal(a.opener, b.opener) &&
+  physical_equal(a.openers, b.openers) &&
   physical_equal(a.opened, b.opened) &&
   a.opened_text == b.opened_text
 }

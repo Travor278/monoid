@@ -21,6 +21,7 @@ fn side_shows(v : ChatView, tab : String) -> Bool {
   tab == "files" ||
   tab == "letters" ||
   tab == "things" ||
+  tab == "subchats" ||
   tab_service(tab) is Some(_) ||
   tab_file(tab) is Some(_) ||
   station_tab(tab) is Some(_) ||
@@ -695,6 +696,8 @@ fn side_tab_names(
         @sf.t("web-pages.chat.files")
       } else if tab == "things" {
         @sf.t("web-main.things.title")
+      } else if tab == "subchats" {
+        @sf.t("web-pages.chat.subchats")
       } else {
         @sf.t("web-main.letters.title")
       }
@@ -708,6 +711,8 @@ fn side_tab_names(
         @sf.t("web-pages.chat.closeFiles")
       } else if tab == "things" {
         @sf.t("web-main.things.close")
+      } else if tab == "subchats" {
+        @sf.t("web-pages.chat.close", args=[("name", label)])
       } else {
         @sf.t("web-main.letters.close")
       }

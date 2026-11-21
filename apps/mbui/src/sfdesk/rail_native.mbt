@@ -247,6 +247,7 @@ fn bar_chat(
   more : () -> Unit,
   jobs : (() -> Unit, Bool)?,
   screen : (() -> Unit, Bool)?,
+  subchats : (() -> Unit, Bool)?,
   archive : (() -> Unit)?,
 ) -> Bool {
   if !@sf.native_on() {
@@ -259,7 +260,7 @@ fn bar_chat(
     bar_chat_carried.clear()
   }
   // (the short column: its services and screens rows of the "…" (chat_page.mbt), their dot on it)
-  let dot = column_short.get() && (jobs is Some((_, true)) || screen is Some((_, true)))
+  let dot = column_short.get() && (jobs is Some((_, true)) || screen is Some((_, true)) || subchats is Some((_, true)))
   bar_action("chat/more", @sf.t("common.more"), "more", more, rows?=if rows.iter().any(fn(i) { i is Some(_) }) { Some(rows) } else { None }, dot~) |> ignore
   bar_action("chat/info", @sf.t("web-pages.chat.info"), "info", info) |> ignore
   let (tabs, _) = side_now(src, r)
@@ -277,6 +278,10 @@ fn bar_chat(
         side_change(src, r, "open", Some(key))
       }
     }) |> ignore
+  }
+  match subchats {
+    Some((act, has_tone)) => bar_action("chat/subchats", @sf.t("web-pages.chat.subchats"), "spawned", act, dot=has_tone) |> ignore
+    None => ()
   }
   match jobs {
     Some((act, alarm)) => bar_action("chat/jobs", @sf.t("web-pages.chat.services"), "web", act, dot=alarm) |> ignore
@@ -777,6 +782,7 @@ fn rail_native_taps(c : @ui.Ctx, src : Source, w : Workspace) -> Unit {
       // (what was open over the tab left closed with it: a chat's ⋯, a menu)
       chat_own.info_open.set(false)
       chat_own.jobs_open.set(false)
+      chat_own.subchats_open.set(false)
       @sf.close_all_presented()
     }
     if id == now {

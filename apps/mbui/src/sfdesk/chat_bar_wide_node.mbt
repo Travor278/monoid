@@ -269,6 +269,7 @@ fn wide_bar_title_row(
   inner.box(fn(row) {
     @sf.style_node(row, fn() { chat_bar_title_row }, in_row=true)
     row.keeps_held(Is(true)).fits(Is(true)) |> ignore
+    wide_bar_breadcrumb(row, view, across, tips)
     wide_bar_title(row, src, r, view, across, tips)
     // (the station the chat runs on, as the workspace's marks have it)
     // (what it last was while the marks are asked again: sfbase's asked_again.mbt)
@@ -360,6 +361,125 @@ fn wide_bar_title_row(
   })
   |> ignore
 }
+
+///|
+/// Led parent-chat route breadcrumb before the chat title on Medium/Large screens:
+/// - 0 ancestors: renders nothing (zero visual noise on ordinary chats and chats opened for a person)
+/// - 1-2 ancestors: `[ spawned + parent1 ] › [ parent2 ] ›`
+/// - 3+ ancestors: `[ spawned + root ] › [ … ] › [ direct parent ] ›` (clicking `…` opens a menu of middle ancestors)
+fn wide_bar_breadcrumb(
+  row : @view.View,
+  view : () -> ChatView?,
+  across : () -> Double,
+  tips : @sf.TipLayer,
+) -> Unit {
+  let openers = fn() {
+    match view() {
+      Some(v) => v.openers
+      None => []
+    }
+  }
+  let key_of = fn() {
+    openers().map(fn(o) { "\{o.chat.station}\u{1}\{o.chat.session}\u{1}\{o.chat.title}\u{1}\{o.archived}" }).join("\u{2}")
+  }
+  row.show(fn() { openers().length() > 0 }, along_row=true, fn(wrap) {
+    wrap.row(Is(true)).lines_up(Is(Some(Middle))).gap(Is(2.0)).shrink(Is(0.0)) |> ignore
+    wrap.pick(at_once=true, key_of, fn(bc, _) {
+      bc.row(Is(true)).lines_up(Is(Some(Middle))).gap(Is(2.0)).shrink(Is(0.0)) |> ignore
+      let list = @signals.untracked(openers)
+      let n = list.length()
+      guard n > 0 else { return }
+      let seg_max = fn() { dmax(56.0, dmin(140.0, across() * 0.16)) }
+      let crumb_item = fn(p : @view.View, o : @sfbase.Opener, first : Bool) {
+        let tip_text = if o.archived && o.note != "" { o.chat.title + " (" + o.note + ")" } else { o.chat.title }
+        @sf.action_box_node(p, fn() { o.chat.title }, fn(_) { @sfbase.open_page(Chat(o.chat)) }, fn(b) {
+          b
+          .row(Is(true))
+          .height(Is(Some(@sf.bar_key_side)))
+          .padding(Is((6.0, 0.0, 6.0, 0.0)))
+          .gap(Is(4.0))
+          .lines_up(Is(Some(Middle)))
+          .radius(Is(8.0))
+          .max_width(By(fn() { Some(seg_max()) }))
+          |> ignore
+          @sf.hover_ground_node(b)
+          @sf.focus_ring_node(b)
+          if first {
+            @sf.icon_node(b, "spawned", 14.0, By(fn() { if @sf.lit_node(b) { @sf.theme().p.text } else { @sf.theme().p.muted } }))
+            |> ignore
+          }
+          @sf.words_node(b, fn() { o.chat.title }, fn() {
+            if @sf.lit_node(b) {
+              wide_crumb_words_hot
+            } else {
+              wide_crumb_words
+            }
+          })
+          .allow_ellipsis(Is(true))
+          .min_width(Is(Some(0.0)))
+          |> ignore
+          @sf.tip_node(tips, b, fn() { tip_text }) |> ignore
+        })
+        .says(Is(Some(@view.said(Link, label=o.chat.title))))
+        |> ignore
+      }
+      let chevron = fn(p : @view.View) {
+        @sf.icon_node(p, "chevron-right", 12.0, By(fn() { @sf.theme().p.subtle })) |> ignore
+      }
+      if n <= 2 {
+        for i, o in list {
+          crumb_item(bc, o, i == 0)
+          chevron(bc)
+        }
+      } else {
+        crumb_item(bc, list[0], true)
+        chevron(bc)
+        let middle = list[1:n - 1].to_owned()
+        @sf.action_box_node(bc, fn() { @sf.t("web-pages.chat.breadcrumbMore") }, fn(at) {
+          let items : Array[@sf.MenuItem?] = middle.map(fn(o) {
+            let label = if o.archived && o.note != "" { o.chat.title + " (" + o.note + ")" } else { o.chat.title }
+            Some(@sf.menu_item_of(label, icon="spawned", fn() { @sfbase.open_page(Chat(o.chat)) }))
+          })
+          @sf.menu(items, from=Node(at))
+        }, fn(b) {
+          b
+          .row(Is(true))
+          .height(Is(Some(@sf.bar_key_side)))
+          .padding(Is((6.0, 0.0, 6.0, 0.0)))
+          .lines_up(Is(Some(Middle)))
+          .lies_along(Is(Middle))
+          .radius(Is(8.0))
+          |> ignore
+          @sf.hover_ground_node(b)
+          @sf.focus_ring_node(b)
+          @sf.icon_node(b, "more", 14.0, By(fn() { if @sf.lit_node(b) { @sf.theme().p.text } else { @sf.theme().p.muted } }))
+          |> ignore
+          @sf.tip_node(tips, b, fn() { @sf.t("web-pages.chat.breadcrumbMore") }) |> ignore
+        })
+        |> ignore
+        chevron(bc)
+        crumb_item(bc, list[n - 1], false)
+        chevron(bc)
+      }
+    })
+  })
+}
+
+///|
+// kept across runs: a value (no field of it changes)
+let wide_crumb_words : @ui.TextStyle = @ui.text_style(size=Ui, color=Muted, wrap=false, w=Cut)
+
+///|
+// kept across runs: a value (no field of it changes)
+let wide_crumb_words_hot : @ui.TextStyle = @ui.text_style(size=Ui, color=Fg, wrap=false, w=Cut)
+
+///|
+// kept across runs: a value (no field of it changes)
+let wide_subchats_count : @ui.TextStyle = @ui.text_style(size=Ui, weight=Medium, color=Muted, wrap=false, tabular=true)
+
+///|
+// kept across runs: a value (no field of it changes)
+let wide_subchats_count_hot : @ui.TextStyle = @ui.text_style(size=Ui, weight=Medium, color=Fg, wrap=false, tabular=true)
 
 ///|
 /// The chat's title in its row (chat_title's): while a new one goes (`chat.rename`), that one, a turning ring beside
@@ -852,6 +972,75 @@ fn wide_bar_keys(
         |> ignore
       },
     )
+    // led sub-chats entry button (only when led sub-chats exist), same height and concentric corner as icon buttons
+    let led_subchats = fn() {
+      match view() {
+        Some(v) => @sfpages.led_subchats(v.opened)
+        None => []
+      }
+    }
+    let subchats_tone = fn() {
+      match view() {
+        Some(v) => @sfpages.opened_summary_tone(v.opened)
+        None => ""
+      }
+    }
+    k.show(fn() { own() && led_subchats().length() > 0 }, along_row=true, fn(b) {
+      let label = fn() { @sf.t("web-pages.chat.subchats") }
+      let tip = fn() { @sf.t("web-pages.chat.subchats") }
+      let button = @sf.action_box_node(b, label, fn(_) { toggle_subchats_pop() }, fn(btn) {
+        btn
+        .row(Is(true))
+        .height(Is(Some(@sf.bar_key_side)))
+        .padding(Is((8.0, 0.0, 8.0, 0.0)))
+        .gap(Is(5.0))
+        .lines_up(Is(Some(Middle)))
+        .lies_along(Is(Middle))
+        .radius(By(fn() {
+          match (ends.linked)() {
+            Some(link) => link.radius(@ui.tree_corner_roots_now())
+            None => @sf.bar_key_side / 2.0
+          }
+        }))
+        |> ignore
+        @sf.hover_ground_node(btn, on=fn() { !chat_own.subchats_open.get() })
+        btn.ground(By(fn() {
+          if chat_own.subchats_open.get() {
+            @sf.theme().p.hover
+          } else {
+            0L
+          }
+        }))
+        |> ignore
+        @sf.focus_ring_node(btn)
+        let hot = fn() { @sf.lit_node(btn) || chat_own.subchats_open.get() }
+        @sf.icon_node(btn, "spawned", 15.0, By(fn() { if hot() { @sf.theme().p.text } else { @sf.theme().p.muted } })) |> ignore
+        @sf.words_node(btn, fn() { led_subchats().length().to_string() }, fn() {
+          if hot() {
+            wide_subchats_count_hot
+          } else {
+            wide_subchats_count
+          }
+        })
+        |> ignore
+        btn.show(at_once=true, fn() { subchats_tone() != "" }, fn(d) {
+          d
+          .width(Is(Some(6.0)))
+          .height(Is(Some(6.0)))
+          .radius(Is(3.0))
+          .ground(By(fn() {
+            match subchats_tone() {
+              "fail" => @sf.theme().p.red
+              "need" => @ui.tree_theme().color(Warn)
+              _ => @sf.theme().p.online
+            }
+          }))
+          |> ignore
+        })
+        @sf.tip_node(tips, btn, tip) |> ignore
+      })
+      chat_subchats_pop_node(b, src, r, view, Some(button))
+    })
     // what it is (its info's popover beside it: chat_pops_node's), what is done with it ("…": the menu a row of the sidebar has)
     k.show(own, at_once=true, fn(b) {
       let button = @sf.icon_button_node(b, "info", fn() { @sf.t("web-pages.chat.info") }, fn() {

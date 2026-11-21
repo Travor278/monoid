@@ -136,6 +136,7 @@ pub(all) struct Opener {
   text : String
   archived : Bool
   note : String
+  led : Bool
 }
 
 ///|
@@ -149,6 +150,7 @@ pub(all) struct OpenedChat {
   state_text : String
   archived : Bool
   note : String
+  led : Bool
 }
 
 ///|
@@ -163,8 +165,21 @@ pub fn opened_of(v : Json?) -> Array[OpenedChat] {
       state_text: text(o, "stateText"),
       archived: flag(o, "archived"),
       note: text(o, "note"),
+      led: flag(o, "led"),
     }
   })
+}
+
+///|
+/// A single `Opener` object from JSON.
+fn opener_item(o : Json?) -> Opener {
+  {
+    chat: { station: text(o, "station"), session: text(o, "session"), title: text(o, "title"), station_name: "" },
+    text: text(o, "text"),
+    archived: flag(o, "archived"),
+    note: text(o, "note"),
+    led: flag(o, "led"),
+  }
 }
 
 ///|
@@ -172,15 +187,20 @@ pub fn opened_of(v : Json?) -> Array[OpenedChat] {
 pub fn opener_of(v : Json?) -> Opener? {
   let o = field(v, "opener")
   match o {
-    Some(Object(_)) =>
-      Some({
-        chat: { station: text(o, "station"), session: text(o, "session"), title: text(o, "title"), station_name: "" },
-        text: text(o, "text"),
-        archived: flag(o, "archived"),
-        note: text(o, "note"),
-      })
+    Some(Object(_)) => Some(opener_item(o))
     _ => None
   }
+}
+
+///|
+/// A chat's led parent chain (`openers`), root first, ending with its direct opener.
+pub fn openers_of(v : Json?) -> Array[Opener] {
+  items(v, "openers").filter_map(fn(j) {
+    match j {
+      Object(_) => Some(opener_item(Some(j)))
+      _ => None
+    }
+  })
 }
 
 ///|

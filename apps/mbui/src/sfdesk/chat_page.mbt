@@ -14,6 +14,7 @@
 priv struct ChatOwn {
   info_open : @signals.Signal[Bool]
   jobs_open : @signals.Signal[Bool]
+  subchats_open : @signals.Signal[Bool]
 }
 
 ///|
@@ -21,14 +22,17 @@ priv struct ChatOwn {
 let chat_own : ChatOwn = {
   info_open: @signals.signal(false, same=fn(a, b) { a == b }),
   jobs_open: @signals.signal(false, same=fn(a, b) { a == b }),
+  subchats_open: @signals.signal(false, same=fn(a, b) { a == b }),
 }
 
 ///|
 fn chat_page_reset() -> Unit {
   chat_own.info_open.set(false)
   chat_own.jobs_open.set(false)
+  chat_own.subchats_open.set(false)
   chat_pops.info = 0
   chat_pops.jobs = 0
+  chat_pops.subchats = 0
   chat_jobs_wait.val = None
   side_front_wait.val = None
   side_under_chat.val = ""
@@ -100,6 +104,21 @@ pub fn open_info_pop() -> Unit {
 }
 
 ///|
+pub fn open_subchats_pop() -> Unit {
+  chat_own.subchats_open.set(true)
+}
+
+///|
+pub fn toggle_subchats_pop() -> Unit {
+  chat_own.subchats_open.set(!chat_own.subchats_open.untracked())
+}
+
+///|
+pub fn subchats_pop_open() -> Bool {
+  chat_own.subchats_open.get()
+}
+
+///|
 /// Whether its info's popover is open, and its services' (tests).
 pub fn chat_pops_open() -> (Bool, Bool) {
   (chat_own.info_open.get(), chat_own.jobs_open.get())
@@ -110,6 +129,7 @@ pub fn chat_pops_open() -> (Bool, Bool) {
 pub fn chat_find_open(r : ChatRef) -> Unit {
   chat_own.info_open.set(false)
   chat_own.jobs_open.set(false)
+  chat_own.subchats_open.set(false)
   find_open(chat_key(r))
 }
 
@@ -232,7 +252,7 @@ fn chat_bar_said(
   src : Source,
   r : ChatRef,
   top : Bool,
-) -> (Bool, (Bool, Bool, Bool), (String, Double?, Bool, Bool, Bool, String, String)?, (Json?, Json?, Json?)) {
+) -> (Bool, (Bool, Bool, Bool), (String, Double?, Bool, Bool, Bool, String, String, Int, String)?, (Json?, Json?, Json?)) {
   let whole = @sfbase.chat_whole_held(src, r)
   let view = @sfbase.chat_view_now(src, r)
   let chat = @sfbase.chat_head_json(src, r)
@@ -249,6 +269,8 @@ fn chat_bar_said(
         v.offline,
         v.agents.map(fn(a) { a.key }).join(" "),
         v.screens.map(fn(s) { s.id + (if s.agent { "*" } else { "" }) }).join(" "),
+        @sfpages.led_subchats(v.opened).length(),
+        @sfpages.opened_summary_tone(v.opened),
       )
     }),
     (chat, whole.value, jobs),
@@ -305,10 +327,19 @@ fn chat_bar_hand(
       } else {
         None
       }
+      let subchats = if @sfpages.led_subchats(view.opened).length() > 0 {
+        Some((toggle_subchats_pop, @sfpages.opened_summary_tone(view.opened) != ""))
+      } else {
+        None
+      }
       // (the short column, no room in it for their own buttons: the first rows of its "…", a line under them; the
       // user, 2026-11-07: 右上角那两个按钮应该收到右侧边栏)
       let rows = if @sf.native_on() && column_short.get() {
         let firsts : Array[@sf.MenuItem?] = []
+        match subchats {
+          Some((act, _)) => firsts.push(Some(@sf.menu_item_of(@sf.t("web-pages.chat.subchats"), icon="spawned", act)))
+          None => ()
+        }
         match screen {
           Some((act, _)) => firsts.push(Some(@sf.menu_item_of(@sf.t("web-pages.chat.screen"), icon="monitor", act)))
           None => ()
@@ -324,7 +355,7 @@ fn chat_bar_hand(
       } else {
         rows
       }
-      bar_chat(src, r, view.agents, info, rows, more, jobs, screen, if archivable { Some(archive) } else { None })
+      bar_chat(src, r, view.agents, info, rows, more, jobs, screen, subchats, if archivable { Some(archive) } else { None })
       |> ignore
     }
     // (not read yet: the actions of the chat before it kept in the system's bars till its own come)
@@ -356,6 +387,9 @@ let chat_info_w : Double = 320.0
 
 ///|
 let jobs_pop_w : Double = 360.0
+
+///|
+let subchats_pop_w : Double = 340.0
 
 ///|
 /// How many pull requests the info names itself (the rest: 全部 N 个).

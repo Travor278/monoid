@@ -1181,6 +1181,22 @@ pub fn Store::opener_of(self : Store, child : Json) -> Json raise {
 }
 
 ///|
+pub fn Store::opened_record(
+  self : Store,
+  child_station : Json,
+  child : Json,
+) -> Json raise {
+  match
+    self.one(
+      "SELECT * FROM opened_chats WHERE child_station = ? AND child = ?",
+      [child_station, child],
+    ) {
+    Some(r) => to_opened(r)
+    None => Json::null()
+  }
+}
+
+///|
 pub fn Store::models_used_by(
   self : Store,
   created_by : Json,
@@ -1227,6 +1243,200 @@ pub fn Store::set_opened_state(
       }
     }
   })
+}
+
+///|
+pub fn Store::set_opened_led(
+  self : Store,
+  child_station : Json,
+  child : Json,
+  led : Bool,
+) -> Json raise {
+  let mut changed = false
+  let mut prev : Json = Json::null()
+  self.with_changes(changes => {
+    match
+      self.one(
+        "SELECT * FROM opened_chats WHERE child_station = ? AND child = ?",
+        [child_station, child],
+      ) {
+      None => ()
+      Some(existing) => {
+        let p = to_opened(existing)
+        prev = p
+        let cur_led = match p {
+          Object(m) => m.get("led")
+          _ => None
+        }
+        let already = match cur_led {
+          Some(True) => led
+          Some(False) => !led
+          _ => false
+        }
+        if !already {
+          ignore(
+            self.run(
+              "UPDATE opened_chats SET led = ? WHERE child_station = ? AND child = ?",
+              [flag(led), child_station, child],
+            ),
+          )
+          changed = true
+          if child_station is String("") {
+            changes.push({
+              "type": "chatMark",
+              "thread": Json::null(),
+              "session": child,
+            })
+            changes.push(session_change(child))
+          }
+          let prev_ps = col(existing, "parent_station")
+          let prev_parent = col(existing, "parent")
+          if prev_ps is String("") {
+            changes.push({
+              "type": "chatMark",
+              "thread": Json::null(),
+              "session": prev_parent,
+            })
+            changes.push(session_change(prev_parent))
+          }
+        }
+      }
+    }
+  })
+  { "changed": Json::boolean(changed), "prev": prev }
+}
+
+///|
+pub fn Store::adopt_opened(self : Store, o : Json) -> Json raise {
+  let get = (k : String) => match o {
+    Object(m) => m.get(k).unwrap_or(Json::null())
+    _ => Json::null()
+  }
+  let child_station = get("childStation")
+  let child = get("child")
+  let parent_station = get("parentStation")
+  let parent = get("parent")
+  let title = get("title")
+  let link = get("link")
+  let opener_title = get("openerTitle")
+  let mut changed = false
+  let mut prev : Json = Json::null()
+  self.with_changes(changes => {
+    match
+      self.one(
+        "SELECT * FROM opened_chats WHERE child_station = ? AND child = ?",
+        [child_station, child],
+      ) {
+      Some(existing) => {
+        let p = to_opened(existing)
+        prev = p
+        let prev_ps = col(existing, "parent_station")
+        let prev_parent = col(existing, "parent")
+        let already = match p {
+          Object(m) =>
+            m.get("led") is Some(True) &&
+            prev_ps == parent_station &&
+            prev_parent == parent
+          _ => false
+        }
+        if already {
+          let title_changed = !(title is Null) && title != col(existing, "title")
+          let link_changed = !(link is Null) && link != col(existing, "link")
+          if title_changed || link_changed {
+            ignore(
+              self.run(
+                "UPDATE opened_chats SET title = COALESCE(?, title), link = COALESCE(?, link) WHERE child_station = ? AND child = ?",
+                [title, link, child_station, child],
+              ),
+            )
+            if child_station is String("") {
+              changes.push({
+                "type": "chatMark",
+                "thread": Json::null(),
+                "session": child,
+              })
+              changes.push(session_change(child))
+            }
+            if parent_station is String("") {
+              changes.push({
+                "type": "chatMark",
+                "thread": Json::null(),
+                "session": parent,
+              })
+              changes.push(session_change(parent))
+            }
+          }
+        } else {
+          ignore(
+            self.run(
+              "UPDATE opened_chats SET parent_station = ?, parent = ?, title = COALESCE(?, title), link = COALESCE(?, link), opener_title = ?, led = 1 WHERE child_station = ? AND child = ?",
+              [
+                parent_station, parent, title, link, opener_title, child_station,
+                child,
+              ],
+            ),
+          )
+          changed = true
+          if child_station is String("") {
+            changes.push({
+              "type": "chatMark",
+              "thread": Json::null(),
+              "session": child,
+            })
+            changes.push(session_change(child))
+          }
+          if parent_station is String("") {
+            changes.push({
+              "type": "chatMark",
+              "thread": Json::null(),
+              "session": parent,
+            })
+            changes.push(session_change(parent))
+          }
+          if prev_ps is String("") &&
+            (prev_parent != parent || prev_ps != parent_station) {
+            changes.push({
+              "type": "chatMark",
+              "thread": Json::null(),
+              "session": prev_parent,
+            })
+            changes.push(session_change(prev_parent))
+          }
+        }
+      }
+      None => {
+        let at = self.now()
+        let key = Json::string("adopt:" + js_string(child))
+        ignore(
+          self.run(
+            "INSERT INTO opened_chats (child_station, child, parent_station, parent, key, title, link, opener_title, led, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            [
+              child_station, child, parent_station, parent, key, title, link, opener_title,
+              at,
+            ],
+          ),
+        )
+        changed = true
+        if child_station is String("") {
+          changes.push({
+            "type": "chatMark",
+            "thread": Json::null(),
+            "session": child,
+          })
+          changes.push(session_change(child))
+        }
+        if parent_station is String("") {
+          changes.push({
+            "type": "chatMark",
+            "thread": Json::null(),
+            "session": parent,
+          })
+          changes.push(session_change(parent))
+        }
+      }
+    }
+  })
+  { "changed": Json::boolean(changed), "prev": prev }
 }
 
 // ── runtime sessions ──

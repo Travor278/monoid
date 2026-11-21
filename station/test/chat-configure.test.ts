@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { CONFIGURE, configureForPeer } from "../src/sessions/chat-configure.ts";
 import { hubConfig } from "../src/sessions/config.ts";
 import { archiveBy, newSession } from "../src/sessions/lifecycle.ts";
+import { settled } from "../src/sessions/opened.ts";
 import { LIST, listForPeer } from "../src/sessions/others.ts";
 import { MANUAL } from "../src/store/rows.ts";
 import { Rig, settle } from "./hub-fakes.ts";
@@ -190,6 +191,267 @@ test("chat_list shows model and creator, filters by model/created_by/archived, a
     assert.ok(onlyFar.includes("Far Active"), onlyFar);
     assert.ok(!onlyFar.includes("Ada Active"), onlyFar);
     assert.ok(!onlyFar.includes(c3), onlyFar);
+  } finally {
+    await near.close();
+    await far.close();
+  }
+});
+
+test("chat_configure reports led/leader, adopts user chats, transfers ownership, releases to person, and syncs settled()", async () => {
+  const r = withModels(new Rig({ link: true }));
+  try {
+    const [leadA] = await newSession(r.hub, web({ title: "Lead A" }));
+    const [leadB] = await newSession(r.hub, web({ title: "Lead B" }));
+    const [child, childThread] = await newSession(r.hub, web({ title: "Worker" }));
+    await settle();
+
+    // Initially not led.
+    const initial = JSON.parse(await r.call(leadA, "chat_configure", { chat: child }));
+    assert.equal(initial.led, false);
+    assert.equal(initial.leader, null);
+
+    // Track store change events to verify real-time chatMark + session pushes.
+    const events: any[] = [];
+    const unsub = r.store.subscribe((c) => events.push(c));
+
+    // Adopt a user-created chat (no prior opened_chats row).
+    const adopted = JSON.parse(await r.call(leadA, "chat_configure", { chat: child, for: "me" }));
+    assert.equal(adopted.updated, true);
+    assert.equal(adopted.before.led, false);
+    assert.equal(adopted.before.leader, null);
+    assert.equal(adopted.after.led, true);
+    assert.equal(adopted.after.leader, leadA);
+
+    const op1 = r.store.openerOf(child);
+    assert.ok(op1);
+    assert.equal(op1.parent, leadA);
+    assert.equal(op1.led, true);
+    assert.equal(op1.key, `adopt:${child}`);
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === child));
+    assert.ok(events.some((e) => e.type === "session" && e.key === child));
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === leadA));
+    assert.ok(events.some((e) => e.type === "session" && e.key === leadA));
+
+    // Station notice posted in target chat.
+    const msgsAfterAdopt = r.store.messagesBefore(childThread.id, null, 20);
+    assert.ok(msgsAfterAdopt.some((m) => m.authorKind === "station" && m.text.includes("Lead A")));
+
+    // Idempotent adopt by the same leader: no-op, no extra notice.
+    const countBeforeRepeat = msgsAfterAdopt.length;
+    const repeatAdopt = JSON.parse(await r.call(leadA, "chat_configure", { chat: child, for: "me" }));
+    assert.equal(repeatAdopt.updated, false);
+    assert.equal(r.store.messagesBefore(childThread.id, null, 20).length, countBeforeRepeat);
+
+    // settled() notifies the new leader.
+    const notified: [string, string][] = [];
+    const origNotify = r.hub.notify.bind(r.hub);
+    r.hub.notify = (k: string, msg: string) => { notified.push([k, msg]); origNotify(k, msg); };
+    settled(r.hub, child, "all_done", "finished work");
+    assert.equal(notified.length, 1);
+    assert.equal(notified[0]![0], leadA);
+    assert.ok(notified[0]![1].includes("finished work"));
+
+    // Transfer leadership from leadA to leadB (preserves original key, notifies leadA, leadB, child).
+    events.length = 0;
+    const taken = JSON.parse(await r.call(leadB, "chat_configure", { chat: child, for: "me" }));
+    assert.equal(taken.updated, true);
+    assert.equal(taken.before.leader, leadA);
+    assert.equal(taken.after.led, true);
+    assert.equal(taken.after.leader, leadB);
+    assert.equal(r.store.openerOf(child)!.key, `adopt:${child}`);
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === leadA));
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === leadB));
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === child));
+
+    notified.length = 0;
+    settled(r.hub, child, "all_done", "for B");
+    assert.equal(notified.length, 1);
+    assert.equal(notified[0]![0], leadB);
+
+    // Release back to person: led -> false, notice posted, settled() stops notifying leader.
+    events.length = 0;
+    const released = JSON.parse(await r.call(leadB, "chat_configure", { chat: child, for: "person" }));
+    assert.equal(released.updated, true);
+    assert.equal(released.before.led, true);
+    assert.equal(released.after.led, false);
+    assert.equal(released.after.leader, null);
+    assert.equal(r.store.openerOf(child)!.led, false);
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === child));
+    assert.ok(events.some((e) => e.type === "chatMark" && e.session === leadB));
+
+    const msgsAfterRelease = r.store.messagesBefore(childThread.id, null, 20);
+    assert.ok(msgsAfterRelease.some((m) => m.authorKind === "station" && m.text.includes("Lead B") && (m.text.includes("Handed over") || m.text.includes("放权"))));
+
+    // Idempotent repeat release: no-op, no extra notice.
+    const repeatRelease = JSON.parse(await r.call(leadB, "chat_configure", { chat: child, for: "person" }));
+    assert.equal(repeatRelease.updated, false);
+    assert.equal(r.store.messagesBefore(childThread.id, null, 20).length, msgsAfterRelease.length);
+
+    // settled() no longer notifies old leader after release.
+    notified.length = 0;
+    settled(r.hub, child, "all_done", "after release");
+    assert.equal(notified.length, 0);
+
+    // Re-adopt a previously released chat (combined with model change).
+    const readopted = JSON.parse(await r.call(leadA, "chat_configure", { chat: child, for: "me", model: "claude-sonnet-4-6" }));
+    assert.equal(readopted.updated, true);
+    assert.equal(readopted.after.led, true);
+    assert.equal(readopted.after.leader, leadA);
+    assert.equal(readopted.after.model, "claude-sonnet-4-6");
+    assert.equal(r.store.openerOf(child)!.key, `adopt:${child}`);
+
+    unsub();
+  } finally {
+    await r.close();
+  }
+});
+
+test("chat_configure enforces lead protections: self, cycles, non-stillfail threads, invalid for", async () => {
+  const r = withModels(new Rig({ link: true }));
+  try {
+    const [a] = await newSession(r.hub, web({ title: "A" }));
+    const [b] = await newSession(r.hub, web({ title: "B" }));
+    const [c] = await newSession(r.hub, web({ title: "C" }));
+    await settle();
+
+    // Invalid for value.
+    assert.match(await r.refused(a, "chat_configure", { chat: b, for: "other" }), /for must be "me" or "person"/);
+
+    // Cannot lead own chat.
+    assert.match(await r.refused(a, "chat_configure", { for: "me" }), /cannot lead your own chat/);
+    assert.match(await r.refused(a, "chat_configure", { chat: a, for: "me" }), /cannot lead your own chat/);
+
+    // Cycle detection: A -> B -> C, so B cannot lead A and C cannot lead A.
+    await r.call(a, "chat_configure", { chat: b, for: "me" });
+    await r.call(b, "chat_configure", { chat: c, for: "me" });
+    assert.match(await r.refused(b, "chat_configure", { chat: a, for: "me" }), /already leads this one/);
+    assert.match(await r.refused(c, "chat_configure", { chat: a, for: "me" }), /already leads this one/);
+
+    // Non-still.fail (Slack) thread refused.
+    const slackThread = r.store.openThreadOf("slack:T1", "C1", "9.1", null, null, null);
+    const slackKey = "slack:C1:9.1";
+    r.store.insertSession({ key: slackKey, connect: "slack:T1", runtime: "claude", profile: "cc", model: "claude-opus-4-6", workspace: r.dir, cwd: r.dir, token: "t-slack", createdAt: 1, lastActiveAt: 1, createdBy: "ada@example.com" });
+    r.store.joinThread(slackThread.id, slackKey, "slack:T1");
+    assert.match(await r.refused(a, "chat_configure", { chat: "C1/9.1", for: "me" }), /only still\.fail chats/);
+    assert.match(await r.refused(a, "chat_configure", { chat: slackKey, for: "me" }), /only still\.fail chats/);
+  } finally {
+    await r.close();
+  }
+});
+
+test("chat_configure adopts and releases chats across stations, syncing mirror rows and blocking cross-station cycles", async () => {
+  const near = withModels(new Rig({ link: true, place: { workspace: "w", station: "near" }, workspaces: ["w"] }));
+  const far = withModels(new Rig({ link: true, place: { workspace: "w", station: "far" }, workspaces: ["w"] }));
+  try {
+    const [caller] = await newSession(near.hub, web({ ws: "w", title: "Near Leader" }));
+    const [remote] = await newSession(far.hub, web({ ws: "w", title: "Far Worker" }));
+    const farLink = far.hub.link(remote)!;
+    const nearLink = near.hub.link(caller)!;
+
+    near.hub.onPeer(async (station, request) => {
+      assert.equal(station, "far");
+      assert.equal(request.method, CONFIGURE);
+      return configureForPeer(far.hub, request, "w", "near");
+    });
+    far.hub.onPeer(async (station, request) => {
+      assert.equal(station, "near");
+      assert.equal(request.method, CONFIGURE);
+      return configureForPeer(near.hub, request, "w", "far");
+    });
+
+    // Near adopts Far chat.
+    const adopted = JSON.parse(await near.call(caller, "chat_configure", { chat: farLink, for: "me" }));
+    assert.equal(adopted.updated, true);
+    assert.equal(adopted.after.led, true);
+    assert.equal(adopted.after.leader, `near/${caller}`);
+
+    // Both stations have synced opened_chats rows.
+    const farOp = far.store.openerOf(remote);
+    assert.ok(farOp);
+    assert.equal(farOp.parentStation, "near");
+    assert.equal(farOp.parent, caller);
+    assert.equal(farOp.led, true);
+
+    const nearMirrors = near.store.openedBy(caller);
+    assert.equal(nearMirrors.length, 1);
+    assert.equal(nearMirrors[0]!.childStation, "far");
+    assert.equal(nearMirrors[0]!.child, remote);
+    assert.equal(nearMirrors[0]!.led, true);
+
+    // Cross-station cycle blocked: Far cannot adopt Near while Near leads Far.
+    assert.match(await far.refused(remote, "chat_configure", { chat: nearLink, for: "me" }), /already leads this one/);
+
+    // Near releases Far chat: both sides updated to led = false.
+    const released = JSON.parse(await near.call(caller, "chat_configure", { chat: farLink, for: "person" }));
+    assert.equal(released.updated, true);
+    assert.equal(released.after.led, false);
+    assert.equal(released.after.leader, null);
+    assert.equal(far.store.openerOf(remote)!.led, false);
+    assert.equal(near.store.openedBy(caller)[0]!.led, false);
+  } finally {
+    await near.close();
+    await far.close();
+  }
+});
+
+test("chat_configure keeps local titles dynamic (null in opened_chats), refreshes remote mirror title, guards leadMirror workspace, and rejects old peers", async () => {
+  const near = withModels(new Rig({ link: true, place: { workspace: "w1", station: "near" }, workspaces: ["w1", "w2"] }));
+  const far = withModels(new Rig({ link: true, place: { workspace: "w1", station: "far" }, workspaces: ["w1"] }));
+  try {
+    // 1. Local untitled chats: opened_chats.title and opener_title stay null (never raw session key).
+    const [untitledParent] = await newSession(near.hub, web({ ws: "w1" }));
+    const [untitledChild] = await newSession(near.hub, web({ ws: "w1" }));
+    await near.call(untitledParent, "chat_configure", { chat: untitledChild, for: "me" });
+    const localOp = near.store.openerOf(untitledChild)!;
+    assert.equal(localOp.title, null);
+    assert.equal(localOp.openerTitle, null);
+
+    // 2. Cross-station untitled chat adopted, then titled later and re-adopted -> mirror title refreshes.
+    const [remoteUntitled] = await newSession(far.hub, web({ ws: "w1" }));
+    const remoteLink = far.hub.link(remoteUntitled)!;
+    near.hub.onPeer(async (station, request) => {
+      assert.equal(station, "far");
+      return configureForPeer(far.hub, request, "w1", "near");
+    });
+
+    await near.call(untitledParent, "chat_configure", { chat: remoteLink, for: "me" });
+    assert.equal(far.store.openerOf(remoteUntitled)!.title, null);
+    assert.equal(far.store.openerOf(remoteUntitled)!.openerTitle, null);
+    assert.equal(near.store.openedRecord("far", remoteUntitled)!.title, null);
+
+    // Release, give remote chat a title, then re-adopt: near mirror's title must refresh.
+    await near.call(untitledParent, "chat_configure", { chat: remoteLink, for: "person" });
+    far.store.setTitle(remoteUntitled, "Renamed Remote");
+    await near.call(untitledParent, "chat_configure", { chat: remoteLink, for: "me" });
+    assert.equal(near.store.openedRecord("far", remoteUntitled)!.title, "Renamed Remote");
+
+    // 3. Cross-workspace leadMirror isolation: w2 parent mirror cannot be cleared by a w1 peer, and empty peer rejected when ws != null.
+    const [w2Parent] = await newSession(near.hub, web({ ws: "w2", title: "W2 Lead" }));
+    near.store.adoptOpened({ childStation: "far", child: "chat:c-w2-child", parentStation: "", parent: w2Parent, title: "W2 Child", link: null, openerTitle: null });
+    assert.equal(near.store.openedRecord("far", "chat:c-w2-child")!.led, true);
+    await assert.rejects(
+      configureForPeer(near.hub, { leadMirror: { childStation: "far", child: "chat:c-w2-child", led: false } }, "w1", "far"),
+      /another workspace/,
+    );
+    await assert.rejects(
+      configureForPeer(near.hub, { leadMirror: { childStation: "far", child: "chat:c-w2-child", led: false } }, "w2", ""),
+      /caller station is required/,
+    );
+    assert.equal(near.store.openedRecord("far", "chat:c-w2-child")!.led, true);
+    // Same workspace with authenticated peer succeeds.
+    await configureForPeer(near.hub, { leadMirror: { childStation: "far", child: "chat:c-w2-child", led: false } }, "w2", "far");
+    assert.equal(near.store.openedRecord("far", "chat:c-w2-child")!.led, false);
+
+    // 4. Old peer station that ignores `lead` and returns only `{ text }` without `target` fails explicitly.
+    near.hub.onPeer(async () => ({ text: JSON.stringify({ session: remoteUntitled }) }));
+    assert.match(
+      await near.refused(untitledParent, "chat_configure", { chat: remoteLink, for: "me" }),
+      /not updated yet: ownership cannot be changed there/,
+    );
+    assert.match(
+      await near.refused(untitledParent, "chat_configure", { chat: remoteLink, for: "person" }),
+      /not updated yet: ownership cannot be changed there/,
+    );
   } finally {
     await near.close();
     await far.close();

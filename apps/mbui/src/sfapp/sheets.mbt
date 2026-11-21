@@ -1559,6 +1559,24 @@ fn open_chat_jobs(src : Source, r : ChatRef) -> Unit {
 }
 
 ///|
+/// The chat's led sub-chats bottom sheet on Small screens.
+fn open_subchats(src : Source, r : ChatRef) -> Unit {
+  @sf.panel_nodes(tr("web-pages.chat.subchats"), from=Unanchored, tall=0.62, hugs=true, grows=true, fn(v, close) {
+    @sfpages.subchats_list_node(
+      v,
+      fn() {
+        match @sfbase.chat_view_now(src, r) {
+          Some(cv) => cv.opened
+          None => []
+        }
+      },
+      close~,
+      show_head=false,
+    )
+  })
+}
+
+///|
 /// The chat's services and jobs to come while they are read (in their bones): made-up ones, two services and a job.
 fn jobs_sample() -> Array[Json] {
   let job = fn(i : Int, service : Bool, n : Int) -> Json {

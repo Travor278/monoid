@@ -363,6 +363,7 @@ test "the last chat-row mark and its agent stand in the archive column for every
           text: "Opened by Parent",
           archived: false,
           note: "",
+          led: false,
         }
         let cases : Array[(@sfbase.ChatItem, String)] = [
           ({ ..base, offline: Some("Offline") }, "Offline"),

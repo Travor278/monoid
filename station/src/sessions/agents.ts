@@ -487,7 +487,7 @@ export const AgentsLive = (control: Control) =>
           case ARCHIVE:
             return archiveForPeer(hub, request, ws);
           case CONFIGURE:
-            return configureForPeer(hub, request, ws);
+            return configureForPeer(hub, request, ws, peer);
           case LIST:
             return listForPeer(hub, request, ws);
           case NOTICE:

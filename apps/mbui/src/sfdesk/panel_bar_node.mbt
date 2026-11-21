@@ -66,6 +66,8 @@ fn side_mark_of(src : Source, r : ChatRef, v : ChatView?, tab : String) -> SideM
       "folder"
     } else if tab == "things" {
       "photo"
+    } else if tab == "subchats" {
+      "spawned"
     } else {
       "chats"
     },

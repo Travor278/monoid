@@ -45,6 +45,7 @@ priv struct ChatBarState {
   open_way : @motion.NodeWay
   row2_h : @signals.Signal[Double]
   extra_target : @signals.Signal[Double]
+  crumb_h : @signals.Signal[Double]
   mut settled_initial : Bool
 }
 
@@ -72,6 +73,7 @@ fn chat_bar_state(r : ChatRef) -> ChatBarState {
         open_way: @motion.NodeWay::new(0.0),
         row2_h: @signals.signal(0.0, same=fn(a, b) { a == b }),
         extra_target: @signals.signal(0.0, same=fn(a, b) { a == b }),
+        crumb_h: @signals.signal(0.0, same=fn(a, b) { a == b }),
         settled_initial: false,
       }
       chat_bar_states[k] = s
@@ -85,13 +87,14 @@ fn chat_bar_state(r : ChatRef) -> ChatBarState {
 /// laid out, after the list was made and put where it opens; opened or shut by a press): what the list put somewhere
 /// stands under. Read as it changes: its state made where the bar is not made yet.
 fn bar_foot_coming(r : ChatRef) -> Double {
-  bar_foot() + chat_bar_state(r).extra_target.get()
+  let s = chat_bar_state(r)
+  bar_foot() + s.extra_target.get() + s.crumb_h.get()
 }
 
 ///|
 fn bar_extra_shown(v : @view.View, r : ChatRef) -> Double {
   match chat_bar_states.get(chat_bar_key(r)) {
-    Some(s) => s.open_way.shown(v) * s.row2_h.get()
+    Some(s) => s.open_way.shown(v) * s.row2_h.get() + s.crumb_h.get()
     None => 0.0
   }
 }
@@ -221,8 +224,17 @@ fn chat_bar_of(b : @view.View, src : Source, r : ChatRef, stint : () -> Int) -> 
     let bar_inputs = fn() {
       let v_shape = match view() {
         Some(v) =>
-          (true, v.title, v.archivable && !v.archived, v.agents.length(), v.people.length(), chat_screens_driven(v.screens))
-        None => (false, r.title, false, 0, 0, false)
+          (
+            true,
+            v.title,
+            v.archivable && !v.archived,
+            v.agents.length(),
+            v.people.length(),
+            chat_screens_driven(v.screens),
+            @sfpages.led_subchats(v.opened).length() > 0,
+            v.openers.length(),
+          )
+        None => (false, r.title, false, 0, 0, false, false, 0)
       }
       let st_shape = match station_now() {
         Some(s) => (true, s.name, s.emoji, s.icon)
@@ -367,6 +379,31 @@ fn chat_bar_of(b : @view.View, src : Source, r : ChatRef, stint : () -> Int) -> 
       )
     })
     |> ignore
+    let openers_now = fn() {
+      match view() {
+        Some(v) => v.openers
+        None => []
+      }
+    }
+    let show_crumb = fn() { !finding() && openers_now().length() > 0 }
+    g.reacts(show_crumb, fn(on) {
+      if !on && state.crumb_h.get() != 0.0 {
+        state.crumb_h.set(0.0)
+      }
+    })
+    g.show(show_crumb, at_once=true, fn(crumb_host) {
+      crumb_host.by_room(fn(cr, rr) {
+        let strip = cr.box(fn(s) {
+          bar_small_breadcrumb_node(s, openers_now)
+        })
+        cr.reacts(fn() { rr.tall(strip) }, fn(h) {
+          if h > 0.0 && state.crumb_h.get() != h {
+            state.crumb_h.set(h)
+          }
+        })
+      })
+      |> ignore
+    })
     g.show(fn() { expanded() || state.open_way.shown(g) > 0.0 }, fn(row2_room) {
       let p = fn() { state.open_way.shown(row2_room) }
       row2_room
@@ -708,12 +745,20 @@ fn bar_has_jobs(jobs : () -> Json?) -> Bool {
 }
 
 ///|
-/// What of chat `r`'s bar's end is shown (its view `view`): none before the view is read; once it is, 归档 and the
-/// services' key, each while it is: what slides in the bar is set off by (bar_slides).
-fn bar_keys_shown(view : () -> ChatView?, jobs : () -> Json?) -> (Bool, Bool, Bool) {
+fn bar_has_subchats(view : () -> ChatView?) -> Bool {
   match view() {
-    Some(_) => (true, bar_archivable(view), bar_has_jobs(jobs))
-    None => (false, false, false)
+    Some(v) => @sfpages.led_subchats(v.opened).length() > 0
+    None => false
+  }
+}
+
+///|
+/// What of chat `r`'s bar's end is shown (its view `view`): none before the view is read; once it is, 归档, the
+/// services' key, and the sub-chats key, each while it is: what slides in the bar is set off by (bar_slides).
+fn bar_keys_shown(view : () -> ChatView?, jobs : () -> Json?) -> (Bool, Bool, Bool, Bool) {
+  match view() {
+    Some(_) => (true, bar_archivable(view), bar_has_jobs(jobs), bar_has_subchats(view))
+    None => (false, false, false, false)
   }
 }
 
@@ -869,6 +914,50 @@ fn bar_end_node(
       |> ignore
     })
     |> ignore
+  })
+  // led sub-chats entry on Small's chat bar, only when led sub-chats exist
+  let has_subchats = fn() { bar_has_subchats(view) }
+  e.show(has_subchats, at_once=true, fn(k) {
+    slides(k)
+    k.row(Is(true)).padding(By(fn() { (bar_keys_apart(), 0.0, 0.0, 0.0) })) |> ignore
+    @sf.round_key_node(k, "spawned", fn() { @sf.t("web-pages.chat.subchats") }, fn() { open_subchats(src, r) }, icon_size=20.0)
+    let tone = fn() {
+      match view() {
+        Some(v) => @sfpages.opened_summary_tone(v.opened)
+        None => ""
+      }
+    }
+    k.show(fn() { tone() != "" }, at_once=true, fn(d) {
+      d
+      .over(Is(true))
+      .lines_up(Is(Some(End)))
+      .padding(Is((0.0, 6.0, 6.0, 0.0)))
+      |> ignore
+      d.box(fn(ring) {
+        ring
+        .width(Is(Some(11.0)))
+        .height(Is(Some(11.0)))
+        .radius(Is(5.5))
+        .padding(Is((2.0, 2.0, 2.0, 2.0)))
+        .ground(By(fn() { @sf.theme().p.bg }))
+        |> ignore
+        ring.box(fn(dot) {
+          dot
+          .grow(Is(1.0))
+          .radius(Is(3.5))
+          .ground(By(fn() {
+            match tone() {
+              "fail" => @sf.theme().p.red
+              "need" => @ui.tree_theme().color(Warn)
+              _ => @sf.theme().p.online
+            }
+          }))
+          |> ignore
+        })
+        |> ignore
+      })
+      |> ignore
+    })
   })
   // what it is (its info's sheet), then what is done with it ("…": the menu a row of the list has)
   e.box(fn(k) {
@@ -1109,3 +1198,106 @@ fn agent_station_node(
     }
   }
 }
+
+///|
+/// Compact single-row led ancestor breadcrumb strip under Row 1 on Small screens:
+/// 1-2 ancestors shown directly, 3+ ancestors collapse middle items into a `…` menu.
+/// Touch target height >= 44pt so every link passes `room_faults`.
+fn bar_small_breadcrumb_node(s : @view.View, openers : () -> Array[@sfbase.Opener]) -> Unit {
+  let key_of = fn() {
+    openers().map(fn(o) { "\{o.chat.station}\u{1}\{o.chat.session}\u{1}\{o.chat.title}\u{1}\{o.archived}" }).join("\u{2}")
+  }
+  s
+  .row(Is(true))
+  .padding(Is((16.0, 0.0, 16.0, 4.0)))
+  .gap(Is(4.0))
+  .lines_up(Is(Some(Middle)))
+  .min_height(Is(Some(44.0)))
+  |> ignore
+  @sf.icon_node(s, "spawned", 14.0, By(fn() { @sf.theme().p.muted })) |> ignore
+  s.pick(at_once=true, key_of, fn(bc, _) {
+    bc.row(Is(true)).grow(Is(1.0)).basis(Is(Some(0.0))).min_width(Is(Some(0.0))).gap(Is(2.0)).lines_up(Is(Some(Middle)))
+    |> ignore
+    let list = @signals.untracked(openers)
+    let n = list.length()
+    guard n > 0 else { return }
+    let crumb_item = fn(p : @view.View, o : @sfbase.Opener) {
+      @sf.action_box_node(p, fn() { o.chat.title }, fn(_) { @sfbase.open_page(Chat(o.chat)) }, fn(b) {
+        b
+        .row(Is(true))
+        .min_height(Is(Some(44.0)))
+        .min_width(Is(Some(44.0)))
+        .max_width(Is(Some(140.0)))
+        .padding(Is((6.0, 0.0, 6.0, 0.0)))
+        .lines_up(Is(Some(Middle)))
+        .lies_along(Is(Middle))
+        .radius(Is(8.0))
+        |> ignore
+        @sf.hover_ground_node(b)
+        @sf.focus_ring_node(b)
+        @sf.words_node(b, fn() { o.chat.title }, fn() {
+          if @sf.lit_node(b) {
+            small_crumb_words_hot
+          } else {
+            small_crumb_words
+          }
+        })
+        .allow_ellipsis(Is(true))
+        .min_width(Is(Some(0.0)))
+        |> ignore
+      })
+      .says(Is(Some(@view.said(Link, label=o.chat.title))))
+      |> ignore
+    }
+    let chevron = fn(p : @view.View) {
+      @sf.icon_node(p, "chevron-right", 12.0, By(fn() { @sf.theme().p.subtle })) |> ignore
+    }
+    if n <= 2 {
+      for i, o in list {
+        if i > 0 {
+          chevron(bc)
+        }
+        crumb_item(bc, o)
+      }
+    } else {
+      crumb_item(bc, list[0])
+      chevron(bc)
+      let middle = list[1:n - 1].to_owned()
+      let more_ref : Ref[@view.View?] = Ref(None)
+      let more_btn = @sf.action_box_node(bc, fn() { @sf.t("web-pages.chat.breadcrumbMore") }, fn(_) {
+        let items : Array[@sf.MenuItem?] = middle.map(fn(o) {
+          let label = if o.archived && o.note != "" { o.chat.title + " (" + o.note + ")" } else { o.chat.title }
+          Some(@sf.menu_item_of(label, icon="spawned", fn() { @sfbase.open_page(Chat(o.chat)) }))
+        })
+        match more_ref.val {
+          Some(at) => @sf.menu(items, from=Node(at))
+          None => ()
+        }
+      }, fn(b) {
+        b
+        .row(Is(true))
+        .min_height(Is(Some(44.0)))
+        .min_width(Is(Some(44.0)))
+        .lines_up(Is(Some(Middle)))
+        .lies_along(Is(Middle))
+        .radius(Is(8.0))
+        |> ignore
+        @sf.hover_ground_node(b)
+        @sf.focus_ring_node(b)
+        @sf.icon_node(b, "more", 14.0, By(fn() { if @sf.lit_node(b) { @sf.theme().p.text } else { @sf.theme().p.muted } }))
+        |> ignore
+      })
+      more_ref.val = Some(more_btn)
+      chevron(bc)
+      crumb_item(bc, list[n - 1])
+    }
+  })
+}
+
+///|
+// kept across runs: a value (no field of it changes)
+let small_crumb_words : @ui.TextStyle = @ui.text_style(size=Meta, color=Muted, wrap=false, w=Cut)
+
+///|
+// kept across runs: a value (no field of it changes)
+let small_crumb_words_hot : @ui.TextStyle = @ui.text_style(size=Meta, color=Fg, wrap=false, w=Cut)
