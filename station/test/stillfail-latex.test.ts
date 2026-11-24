@@ -3,7 +3,7 @@
 // idempotent .gitignore configuration, and latex-preview.sh initialization + package validation.
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -214,5 +214,161 @@ test("latex-preview.sh --init-only detects main tex, preserves .mcp.json servers
         stdio: "pipe",
       }),
     /not a valid queelius\/scholia/,
+  );
+});
+
+test("scholia-ctl.py supports --offline comment reading, numbered source context in show, and .scholia/.port discovery", { skip: !hasPython && "python3 not installed" }, async () => {
+  const dir = fresh("latex-offline-");
+  mkdirSync(join(dir, ".scholia"), { recursive: true });
+  writeFileSync(
+    join(dir, "main.tex"),
+    "\\documentclass{article}\n\\begin{document}\nLine 3\nWe optimize $L$.\nLine 5\n\\end{document}\n",
+  );
+  writeFileSync(
+    join(dir, ".scholia", "comments.json"),
+    JSON.stringify({
+      version: 1,
+      comments: [
+        {
+          id: "c-off1",
+          status: "open",
+          stale: false,
+          anchor: { kind: "source_range", file: "main.tex", line_start: 4, line_end: 4 },
+          resolved_source: { file: "main.tex", line_start: 4, line_end: 4 },
+          snippet: "We optimize $L$.",
+          thread: [{ author: "human", at: "2026-11-24T01:00:00Z", text: "Tighten notation" }],
+        },
+      ],
+    }),
+  );
+
+  const listOut = execFileSync("python3", [CTL, "comments", "--dir", dir, "--offline", "--status", "open", "--format", "text"], { encoding: "utf8" });
+  assert.ok(listOut.includes("[c-off1] (open) main.tex:4"));
+  assert.ok(listOut.includes("Tighten notation"));
+
+  const showOut = execFileSync("python3", [CTL, "show", "--dir", dir, "c-off1", "--offline", "--context", "1"], { encoding: "utf8" });
+  assert.ok(showOut.includes("source (main.tex):"));
+  assert.ok(showOut.includes(">    4 | We optimize $L$."));
+  assert.ok(showOut.includes("     3 | Line 3"));
+
+  // .scholia/.port overrides .scholia.yaml port without mutating tracked config
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ main: "from-runtime-port.tex" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const { port } = server.address() as { port: number };
+  try {
+    writeFileSync(join(dir, ".scholia.yaml"), "main: main.tex\nport: 1\n");
+    writeFileSync(join(dir, ".scholia", ".port"), `${port}\n`);
+    const paper = JSON.parse((await execFileAsync("python3", [CTL, "paper", "--dir", dir], { encoding: "utf8" })).stdout);
+    assert.equal(paper.main, "from-runtime-port.tex");
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("git-setup merge driver resolves concurrent .scholia/comments.json edits cleanly in a real git merge", { skip: !hasPython && "python3 not installed" }, () => {
+  const dir = fresh("latex-merge-");
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", dir, "-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], { encoding: "utf8" });
+
+  git("init", "-b", "main");
+  mkdirSync(join(dir, ".scholia"), { recursive: true });
+  const baseComments = {
+    version: 1,
+    comments: [
+      {
+        id: "c-shared",
+        status: "open",
+        created: "2026-11-24T01:00:00Z",
+        updated: "2026-11-24T01:00:00Z",
+        anchor: { kind: "paper" },
+        thread: [{ author: "human", at: "2026-11-24T01:00:00Z", text: "Base note" }],
+      },
+      {
+        id: "c-delete-me",
+        status: "open",
+        created: "2026-11-24T01:00:00Z",
+        updated: "2026-11-24T01:00:00Z",
+        anchor: { kind: "paper" },
+        thread: [{ author: "human", at: "2026-11-24T01:00:00Z", text: "Obsolete" }],
+      },
+    ],
+  };
+  writeFileSync(join(dir, ".scholia", "comments.json"), JSON.stringify(baseComments, null, 2) + "\n");
+  const setup = JSON.parse(execFileSync("python3", [CTL, "git-setup", "--dir", dir], { encoding: "utf8" }));
+  assert.equal(setup.merge_driver_configured, true);
+  git("add", ".gitignore", ".gitattributes", ".scholia/comments.json");
+  git("commit", "-m", "base");
+
+  // Branch A: replies to c-shared, deletes c-delete-me, adds c-from-a
+  git("checkout", "-b", "branch-a");
+  const aComments = {
+    version: 1,
+    comments: [
+      {
+        ...baseComments.comments[0],
+        updated: "2026-11-24T02:00:00Z",
+        thread: [
+          ...baseComments.comments[0]!.thread,
+          { author: "human", at: "2026-11-24T02:00:00Z", text: "Reply from A" },
+        ],
+      },
+      {
+        id: "c-from-a",
+        status: "open",
+        created: "2026-11-24T02:05:00Z",
+        updated: "2026-11-24T02:05:00Z",
+        anchor: { kind: "paper" },
+        thread: [{ author: "human", at: "2026-11-24T02:05:00Z", text: "New in A" }],
+      },
+    ],
+  };
+  writeFileSync(join(dir, ".scholia", "comments.json"), JSON.stringify(aComments, null, 2) + "\n");
+  git("commit", "-am", "edits on A");
+
+  // Branch B (from main): resolves c-shared with newer timestamp, adds c-from-b
+  git("checkout", "main");
+  const bComments = {
+    version: 1,
+    comments: [
+      {
+        ...baseComments.comments[0],
+        status: "resolved",
+        updated: "2026-11-24T03:00:00Z",
+        thread: [
+          ...baseComments.comments[0]!.thread,
+          { author: "claude", at: "2026-11-24T03:00:00Z", text: "Resolved in B" },
+        ],
+      },
+      baseComments.comments[1],
+      {
+        id: "c-from-b",
+        status: "open",
+        created: "2026-11-24T03:05:00Z",
+        updated: "2026-11-24T03:05:00Z",
+        anchor: { kind: "paper" },
+        thread: [{ author: "human", at: "2026-11-24T03:05:00Z", text: "New in B" }],
+      },
+    ],
+  };
+  writeFileSync(join(dir, ".scholia", "comments.json"), JSON.stringify(bComments, null, 2) + "\n");
+  git("commit", "-am", "edits on B");
+
+  // Merge branch-a into main: should succeed cleanly with zero conflicts
+  git("merge", "--no-edit", "branch-a");
+  const merged = JSON.parse(readFileSync(join(dir, ".scholia", "comments.json"), "utf8"));
+  const byId = new Map(merged.comments.map((c: any) => [c.id, c]));
+
+  assert.equal(byId.has("c-delete-me"), false, "clean deletion on A is honored");
+  assert.equal(byId.has("c-from-a"), true, "comment added on A is preserved");
+  assert.equal(byId.has("c-from-b"), true, "comment added on B is preserved");
+  const shared: any = byId.get("c-shared");
+  assert.equal(shared.status, "resolved", "newer status wins");
+  assert.deepEqual(
+    shared.thread.map((e: any) => e.text),
+    ["Base note", "Reply from A", "Resolved in B"],
+    "concurrent replies are merged chronologically",
   );
 });

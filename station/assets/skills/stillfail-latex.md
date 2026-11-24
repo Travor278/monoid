@@ -51,7 +51,11 @@ In an already-running session or runtimes that do not auto-load workspace `.mcp.
 python3 <this skill>/scholia-ctl.py paper --dir <paper-dir>
 
 # Open comment queue with exact file:line ranges, snippets, and {old, new} suggestions
+# (add --offline to read .scholia/comments.json directly after a git pull without starting the daemon)
 python3 <this skill>/scholia-ctl.py comments --dir <paper-dir> --status open --format text
+
+# Inspect one comment together with numbered source lines from disk
+python3 <this skill>/scholia-ctl.py show --dir <paper-dir> c-1234abcd --context 4
 
 # Render a boxed comment region or source range to PNG for visual inspection (and chat_post files=[...])
 python3 <this skill>/scholia-ctl.py image --dir <paper-dir> --comment-id c-1234abcd --out region.png
@@ -69,7 +73,9 @@ python3 <this skill>/scholia-ctl.py add --dir <paper-dir> --file sections/method
 python3 <this skill>/scholia-ctl.py goto --dir <paper-dir> --section "Method"
 ```
 
-Always pass `--port <port>` if the service runs on a port different from `.scholia.yaml` (or set `SCHOLIA_PORT`).
+`latex-preview.sh` writes the active runtime port to the gitignored `.scholia/.port`, so `scholia-ctl.py` discovers it
+automatically even when `job_start` assigns a port different from `.scholia.yaml` (override with `--port` or
+`SCHOLIA_PORT`).
 
 ## Git sync with collaborators
 
@@ -77,10 +83,13 @@ Scholia stores comments in plain-text `.scholia/comments.json` and reads/writes 
 When line numbers shift after another author edits earlier paragraphs, Scholia re-anchors open comments using their
 captured source snippet (marking a comment `stale` only if the snippet itself was rewritten).
 
-- **Track in Git**: `*.tex`, `*.bib`, figures, `.scholia.yaml`, `.scholia/comments.json`.
+- **Track in Git**: `*.tex`, `*.bib`, figures, `.scholia.yaml`, `.scholia/comments.json`, `.gitattributes`.
 - **Ignore in Git**: TeX build artifacts (`*.aux`, `*.log`, `*.fls`, `*.fdb_latexmk`, `*.synctex.gz`, `*.bbl`, `*.blg`,
-  `*.out`) and machine-local `.mcp.json`. Run `python3 <this skill>/scholia-ctl.py git-setup --dir <paper-dir>` to
-  append these rules idempotently.
+  `*.out`), lock/runtime files (`.scholia/.port`, `.scholia/.*.lock`), and machine-local `.mcp.json`.
+- **Conflict-free concurrent comments**: `python3 <this skill>/scholia-ctl.py git-setup --dir <paper-dir>` configures
+  `.gitignore`, adds `.scholia/comments.json merge=scholia-comments` to `.gitattributes`, and installs a local Git
+  3-way semantic merge driver (`scholia-ctl.py merge-comments %O %A %B`) that unions concurrent comments and thread
+  replies by ID and timestamp instead of leaving JSON merge conflicts.
 - **Sync routine**:
   1. Pull before editing or committing: `git pull --rebase`.
   2. Commit `.tex` changes alongside `.scholia/comments.json` after resolving a batch of comments, then `git push`.

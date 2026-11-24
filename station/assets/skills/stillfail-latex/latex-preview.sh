@@ -181,6 +181,10 @@ if ! command -v latexmk >/dev/null 2>&1 \
   exit 1
 fi
 
+# Record active runtime port in gitignored .scholia/.port so scholia-ctl.py finds it automatically.
+mkdir -p "$DIR/.scholia"
+printf '%s\n' "$PORT" > "$DIR/.scholia/.port"
+
 cd "$DIR"
 CMD=("${SCHOLIA_CMD[@]}" --port "$PORT" serve)
 if [ -n "$MAIN" ]; then
